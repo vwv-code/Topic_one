@@ -1,0 +1,6 @@
+# Vite 自动生成的缓存文件，永远不要提交
+.vite/
+dist/
+node_modules/
+*.log
+node_modules
