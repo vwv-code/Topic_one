@@ -1,0 +1,66 @@
+server:
+  port: 8080
+
+spring:
+  # ====== 数据源配置（MySQL 8.0）======
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://localhost:3306/topic_one?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: root
+    password: 123456
+
+  # ====== Redis 缓存配置 ======
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      password:
+      database: 0
+      lettuce:
+        pool:
+          max-active: 16
+          max-idle: 8
+          min-idle: 0
+          max-wait: -1ms
+
+  # ====== 文件上传限制 ======
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 50MB
+
+# ====== MyBatis-Plus 配置 ======
+mybatis-plus:
+  mapper-locations: classpath*:/mapper/**/*.xml
+  type-aliases-package: com.topicone.entity
+  global-config:
+    db-config:
+      id-type: assign_id
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+
+# ====== MinIO 对象存储配置 ======
+minio:
+  endpoint: http://localhost:9000
+  access-key: minioadmin
+  secret-key: minioadmin
+  bucket-name: topic-one-audio
+
+# ====== AI 服务配置（预留）======
+ai:
+  api-key: your-api-key-here
+  model: gpt-4o
+  base-url: https://api.openai.com/v1/chat/completions
+  tts-url: https://api.openai.com/v1/audio/speech
+
+# ====== 日志配置 ======
+logging:
+  level:
+    com.topicone: debug
+    org.springframework.web.socket: debug
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"

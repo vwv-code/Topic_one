@@ -224,7 +224,7 @@ function handleConfirm() {
 
 function handleSave() {
   const sceneLabel = allScenes.value.find((s) => s.value === form.scene)?.label || ''
-  store.currentScene = sceneLabel + '模式'
+  store.currentScene = sceneLabel
 }
 
 // 判断是否为自定义图标格式（首字|颜色）

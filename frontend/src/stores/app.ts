@@ -31,7 +31,7 @@ export const useAppStore = defineStore('app', () => {
     audioBlob: null
   })
 
-  const currentScene = ref('日常对话模式')
+  const currentScene = ref('日常对话')
   const isFavorited = ref(false)
   const aiStatus = ref<'ready' | 'recording' | 'processing' | 'speaking'>('ready')
 
