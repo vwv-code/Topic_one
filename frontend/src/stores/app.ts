@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import { getSceneList, type SceneItem } from '@/api/scenes'
 
 export interface ChatHistory {
   id: string
@@ -25,6 +26,10 @@ export const useAppStore = defineStore('app', () => {
     { id: '6', title: '购物场景对话', createdAt: new Date(), isActive: false }
   ])
 
+  // 场景列表（从后端加载）
+  const scenes = ref<SceneItem[]>([])
+  const scenesLoaded = ref(false)
+
   const recordingState = ref<RecordingState>({
     isRecording: false,
     duration: 0,
@@ -35,12 +40,30 @@ export const useAppStore = defineStore('app', () => {
   const isFavorited = ref(false)
   const aiStatus = ref<'ready' | 'recording' | 'processing' | 'speaking'>('ready')
 
+  // 当前用户 ID（后续对接登录后替换为真实值）
+  const userId = ref(1)
+
   // ========== 计算属性 ==========
   const activeChatId = computed(() =>
     chatHistories.value.find(h => h.isActive)?.id || ''
   )
 
   // ========== 方法 ==========
+
+  /** 从后端加载场景列表 */
+  async function fetchScenes() {
+    try {
+      const res = await getSceneList(userId.value)
+      if (res.code === 200 && res.data) {
+        scenes.value = res.data
+        scenesLoaded.value = true
+      }
+    } catch (e) {
+      console.error('加载场景失败:', e)
+      scenesLoaded.value = true
+    }
+  }
+
   function createNewChat() {
     const newId = Date.now().toString()
     chatHistories.value.forEach(h => (h.isActive = false))
@@ -76,7 +99,6 @@ export const useAppStore = defineStore('app', () => {
     recordingState.value.isRecording = false
     aiStatus.value = 'processing'
     
-    // 模拟处理完成后恢复
     setTimeout(() => {
       aiStatus.value = 'ready'
     }, 1500)
@@ -97,6 +119,10 @@ export const useAppStore = defineStore('app', () => {
     isFavorited,
     aiStatus,
     activeChatId,
+    scenes,
+    scenesLoaded,
+    userId,
+    fetchScenes,
     createNewChat,
     selectChat,
     toggleRecording,

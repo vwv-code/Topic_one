@@ -23,6 +23,15 @@
               :class="['scene-card', { active: form.scene === scene.value }]"
               @click="form.scene = scene.value"
             >
+              <!-- 删除按钮（hover 显示） -->
+              <span
+                class="delete-btn"
+                @click.stop="confirmDelete(scene)"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+                  <path d="M18 6L6 18M6 6l12 12"/>
+                </svg>
+              </span>
               <!-- 自定义场景：彩色首字母头像 -->
               <span
                 v-if="isCustomIcon(scene.icon)"
@@ -47,6 +56,54 @@
             </button>
           </div>
         </section>
+
+        <!-- 选中场景详情 -->
+        <Transition name="detail-fade">
+          <section v-if="selectedScene" class="setting-section detail-section">
+            <div class="detail-header">
+              <span v-if="isCustomIcon(selectedScene.icon)" class="detail-icon letter-avatar" :style="{ background: getIconColor(selectedScene.icon) }">{{ getIconLetter(selectedScene.icon) }}</span>
+              <span v-else class="detail-icon">{{ selectedScene.icon }}</span>
+              <span class="detail-title">{{ selectedScene.label }}</span>
+            </div>
+
+            <div class="detail-body">
+              <div class="detail-field" @click="startEdit('description')">
+                <label class="field-label">场景描述</label>
+                <div v-if="editingField !== 'description'" class="field-content editable-text" :class="{ empty: !editDescription }">
+                  {{ editDescription || '点击编辑场景描述...' }}
+                </div>
+                <textarea
+                  v-else
+                  ref="descTextareaRef"
+                  v-model="editDescription"
+                  class="field-content editable-input"
+                  placeholder="描述这个场景的背景、目标和适用情况..."
+                  rows="3"
+                  maxlength="200"
+                  @click.stop
+                  @blur="editingField = null"
+                ></textarea>
+              </div>
+              <div class="detail-field" @click="startEdit('roleSetting')">
+                <label class="field-label">角色设定</label>
+                <div v-if="editingField !== 'roleSetting'" class="field-content editable-text" :class="{ empty: !editRoleSetting }">
+                  {{ editRoleSetting || '点击编辑角色设定...' }}
+                </div>
+                <textarea
+                  v-else
+                  ref="roleTextareaRef"
+                  v-model="editRoleSetting"
+                  class="field-content editable-input"
+                  placeholder="设定AI在这个场景中的角色..."
+                  rows="2"
+                  maxlength="200"
+                  @click.stop
+                  @blur="editingField = null"
+                ></textarea>
+              </div>
+            </div>
+          </section>
+        </Transition>
 
         <!-- 难度等级 -->
         <section class="setting-section">
@@ -86,7 +143,7 @@
 
         <!-- 保存按钮 -->
         <div class="action-area">
-          <button class="save-btn" @click="handleSave">保存设置</button>
+          <button class="save-btn" :disabled="saving" @click="handleSave">{{ saving ? '保存中...' : '保存设置' }}</button>
         </div>
       </div>
     </div>
@@ -122,7 +179,25 @@
                   :style="{ background: previewColor }"
                 >{{ previewLetter }}</span>
               </div>
-              <p class="input-hint">输入后点击确认，新场景将添加到列表中</p>
+
+              <label class="input-label" style="margin-top: 14px;">场景描述</label>
+              <textarea
+                v-model="customDescription"
+                class="scene-textarea"
+                placeholder="描述这个场景的背景、目标和适用情况..."
+                rows="3"
+                maxlength="200"
+              ></textarea>
+
+              <label class="input-label" style="margin-top: 14px;">角色设定</label>
+              <textarea
+                v-model="customRoleSetting"
+                class="scene-textarea"
+                placeholder="设定AI在这个场景中的角色，例如：你是一位友好的酒店前台接待员..."
+                rows="2"
+                maxlength="200"
+              ></textarea>
+              <p class="input-hint">填写描述与角色设定后点击确认</p>
             </div>
             <div class="modal-footer">
               <button class="btn-cancel" @click="showModal = false">取消</button>
@@ -136,12 +211,34 @@
         </div>
       </Transition>
     </Teleport>
+
+    <!-- 删除确认弹窗 -->
+    <Teleport to="body">
+      <Transition name="modal-fade">
+        <div v-if="showDeleteConfirm" class="modal-overlay" @click.self="showDeleteConfirm = false">
+          <div class="modal-container modal-sm">
+            <div class="modal-body" style="text-align: center; padding: 28px 22px;">
+              <p style="font-size: 15px; color: var(--color-text-primary); margin-bottom: 6px;">
+                确定要删除场景「<strong>{{ deleteTarget?.label }}</strong>」吗？
+              </p>
+              <p style="font-size: 12.5px; color: var(--color-text-tertiary);">删除后无法恢复</p>
+            </div>
+            <div class="modal-footer" style="justify-content: center; gap: 12px;">
+              <button class="btn-cancel" @click="showDeleteConfirm = false">取消</button>
+              <button class="btn-danger" @click="handleDelete">确认删除</button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
   </div>
 </template>
 
 <script setup lang="ts">
-import { reactive, ref, nextTick, watch, computed } from 'vue'
+import { reactive, ref, nextTick, watch, computed, onMounted } from 'vue'
 import { useAppStore } from '@/stores/app'
+import { createScene, getSettings, saveSettings, deleteScene } from '@/api/scenes'
+import type { SceneItem } from '@/api/scenes'
 
 const store = useAppStore()
 
@@ -157,8 +254,6 @@ const colorPool = [
   '#3b82f6', // 蓝
 ]
 
-let customColorIndex = 0
-
 // 弹窗预览：取首字 + 按已创建数量分配颜色
 const previewLetter = computed(() => {
   const name = customSceneName.value.trim()
@@ -166,27 +261,82 @@ const previewLetter = computed(() => {
 })
 
 const previewColor = computed(() => {
-  return colorPool[customScenes.value.length % colorPool.length]
+  const builtinCount = builtinScenes.value.length
+  const customCount = allScenes.value.length - builtinCount
+  return colorPool[customCount % colorPool.length]
 })
 
 const form = reactive({
-  scene: 'daily',
+  scene: '',
   difficulty: 'intermediate',
   speed: 1.0
 })
 
-const baseScenes = [
-  { value: 'daily', label: '日常对话', icon: '💬' },
-  { value: 'restaurant', label: '餐厅点餐', icon: '🍽️' },
-  { value: 'business', label: '商务会议', icon: '💼' },
-  { value: 'travel', label: '旅游问路', icon: '✈️' },
-  { value: 'interview', label: '面试自我介绍', icon: '📋' }
-]
+// 设置页内使用的场景项类型（统一内置和自定义）
+interface SettingsSceneItem {
+  value: string
+  label: string
+  icon: string
+  description?: string
+  roleSetting?: string
+  difficulty?: number
+}
 
-// 用户自建的场景列表（运行时追加）
-const customScenes = ref<Array<{ value: string; label: string; icon: string }>>([])
+// 内置场景（从 store.scenes 中筛选 isBuiltin=true）
+const builtinScenes = computed<SettingsSceneItem[]>(
+  () => store.scenes.filter(s => s.isBuiltin).map(s => ({
+    value: String(s.sceneId),
+    label: s.sceneName,
+    icon: s.icon,
+    description: s.description,
+    roleSetting: s.roleSetting,
+    difficulty: s.difficulty
+  }))
+)
 
-const allScenes = computed(() => [...baseScenes, ...customScenes.value])
+// 用户自建的场景列表
+const customScenes = computed<SettingsSceneItem[]>(
+  () => store.scenes.filter(s => !s.isBuiltin).map(s => ({
+    value: String(s.sceneId),
+    label: s.sceneName,
+    icon: s.icon,
+    description: s.description,
+    roleSetting: s.roleSetting,
+    difficulty: s.difficulty
+  }))
+)
+
+// 全部场景：内置 + 自定义
+const allScenes = computed(() => [...builtinScenes.value, ...customScenes.value])
+
+// 当前选中的场景（含详情数据）
+const selectedScene = computed(() =>
+  allScenes.value.find((s) => s.value === form.scene) || null
+)
+
+// 详情面板内联编辑状态
+const editingField = ref<'description' | 'roleSetting' | null>(null)
+const editDescription = ref('')
+const editRoleSetting = ref('')
+const descTextareaRef = ref<HTMLTextAreaElement | null>(null)
+const roleTextareaRef = ref<HTMLTextAreaElement | null>(null)
+
+// 选中场景变化时，同步编辑值
+watch(selectedScene, (scene) => {
+  if (scene) {
+    editDescription.value = scene.description || ''
+    editRoleSetting.value = scene.roleSetting || ''
+    editingField.value = null
+  }
+}, { immediate: true })
+
+function startEdit(field: 'description' | 'roleSetting') {
+  editingField.value = field
+  nextTick(() => {
+    const el = field === 'description' ? descTextareaRef.value : roleTextareaRef.value
+    el?.focus()
+  })
+}
 
 const difficulties = [
   { value: 'beginner', label: '初级' },
@@ -197,34 +347,157 @@ const difficulties = [
 // 弹窗状态
 const showModal = ref(false)
 const customSceneName = ref('')
+const customDescription = ref('')
+const customRoleSetting = ref('')
 const inputRef = ref<HTMLInputElement | null>(null)
+const creating = ref(false) // 创建中防重复提交
+const saving = ref(false) // 保存设置中
+
+// 删除确认弹窗
+const showDeleteConfirm = ref(false)
+const deleteTarget = ref<SettingsSceneItem | null>(null)
+const deleting = ref(false)
 
 watch(showModal, (val) => {
   if (val) {
     customSceneName.value = ''
+    customDescription.value = ''
+    customRoleSetting.value = ''
     nextTick(() => inputRef.value?.focus())
   }
 })
 
-function handleConfirm() {
+// 页面加载时从后端拉取场景列表 + 已存设置
+onMounted(async () => {
+  // 并行加载场景列表和用户设置
+  const [scenesRes, settingsRes] = await Promise.allSettled([
+    store.scenes.length === 0 ? store.fetchScenes() : Promise.resolve(),
+    getSettings(store.userId)
+  ]) as [
+    PromiseSettledResult<void>,
+    PromiseSettledResult<{ code: number; data: import('@/api/scenes').UserSettings }>
+  ]
+
+  // 场景列表
+  if (allScenes.value.length > 0) {
+    // 优先用已保存的场景ID，否则默认第一个
+    if (settingsRes.status === 'fulfilled' && settingsRes.value.data?.currentSceneId) {
+      const savedSceneId = String(settingsRes.value.data.currentSceneId)
+      if (allScenes.value.some(s => s.value === savedSceneId)) {
+        form.scene = savedSceneId
+      } else {
+        form.scene = allScenes.value[0].value
+      }
+    } else {
+      form.scene = allScenes.value[0].value
+    }
+  }
+
+  // 用户设置（难度、语速）
+  if (settingsRes.status === 'fulfilled' && settingsRes.value.data) {
+    const s = settingsRes.value.data
+    form.difficulty = s.difficulty || 'intermediate'
+    form.speed = s.speechSpeed || 1.0
+  }
+})
+
+async function handleConfirm() {
   const name = customSceneName.value.trim()
-  if (!name) return
+  if (!name || creating.value) return
 
-  const value = 'custom_' + Date.now()
-  const color = colorPool[customScenes.value.length % colorPool.length]
-  // 使用彩色首字母头像，格式：首字|颜色
-  const icon = `${name.charAt(0).toUpperCase()}|${color}`
-  const newScene = { value, label: name, icon }
-  customScenes.value.push(newScene)
+  creating.value = true
+  try {
+    const res = await createScene({
+      userId: store.userId,
+      sceneName: name,
+      description: customDescription.value.trim() || `自定义场景：${name}`,
+      roleSetting: customRoleSetting.value.trim(),
+      difficulty: 1
+    })
 
-  customColorIndex++
-  form.scene = value
-  showModal.value = false
+    if (res.code === 200 && res.data) {
+      // 将新场景追加到 store
+      store.scenes.push(res.data)
+      form.scene = String(res.data.sceneId)
+      showModal.value = false
+    }
+  } catch (e) {
+    console.error('创建自定义场景失败:', e)
+  } finally {
+    creating.value = false
+  }
 }
 
-function handleSave() {
-  const sceneLabel = allScenes.value.find((s) => s.value === form.scene)?.label || ''
-  store.currentScene = sceneLabel
+// 判断是否为内置场景（内置场景不可删除）
+function isBuiltinScene(scene: SettingsSceneItem): boolean {
+  return builtinScenes.value.some(s => s.value === scene.value)
+}
+
+// 弹出删除确认框
+function confirmDelete(scene: SettingsSceneItem) {
+  deleteTarget.value = scene
+  showDeleteConfirm.value = true
+}
+
+// 执行删除
+async function handleDelete() {
+  if (!deleteTarget.value || deleting.value) return
+  deleting.value = true
+
+  try {
+    await deleteScene(Number(deleteTarget.value.value))
+    // 从 store 中移除
+    const idx = store.scenes.findIndex(s => s.sceneId === Number(deleteTarget.value!.value))
+    if (idx !== -1) store.scenes.splice(idx, 1)
+    // 如果删除的是当前选中场景，切换到第一个
+    if (form.scene === deleteTarget.value?.value && allScenes.value.length > 0) {
+      form.scene = allScenes.value[0].value
+    }
+    showDeleteConfirm.value = false
+    deleteTarget.value = null
+  } catch (e) {
+    console.error('删除场景失败:', e)
+    alert('删除失败，请重试')
+  } finally {
+    deleting.value = false
+  }
+}
+
+async function handleSave() {
+  if (saving.value) return
+  saving.value = true
+
+  const selected = allScenes.value.find((s) => s.value === form.scene)
+  store.currentScene = selected?.label || ''
+
+  try {
+    // 一次性保存：用户设置 + 场景描述/角色设定
+    await saveSettings({
+      userId: store.userId,
+      currentSceneId: selected ? Number(selected.value) : null,
+      difficulty: form.difficulty,
+      speechSpeed: form.speed,
+      sceneId: selected ? Number(selected.value) : null,
+      description: editDescription.value,
+      roleSetting: editRoleSetting.value
+    })
+
+    // 同步更新本地 store 中的场景数据
+    if (selected) {
+      const storeScene = store.scenes.find(s => s.sceneId === Number(selected.value))
+      if (storeScene) {
+        storeScene.description = editDescription.value
+        storeScene.roleSetting = editRoleSetting.value
+      }
+    }
+
+    alert('设置已保存')
+  } catch (e) {
+    console.error('保存设置失败:', e)
+    alert('保存失败，请重试')
+  } finally {
+    saving.value = false
+  }
 }
 
 // 判断是否为自定义图标格式（首字|颜色）
@@ -322,6 +595,35 @@ function getIconColor(icon: string): string {
   cursor: pointer;
   transition: all 0.2s;
   text-align: center;
+  position: relative;
+
+  // 删除按钮（hover 显示，右上角）
+  .delete-btn {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: var(--color-bg-tertiary);
+    color: var(--color-text-tertiary);
+    opacity: 0;
+    transition: all 0.15s;
+    pointer-events: none;
+
+    &:hover {
+      background: #fee2e2;
+      color: #ef4444;
+    }
+  }
+
+  &:hover .delete-btn {
+    opacity: 1;
+    pointer-events: auto;
+  }
 
   .scene-icon {
     font-size: 22px;
@@ -662,6 +964,26 @@ function getIconColor(icon: string): string {
   }
 }
 
+.btn-danger {
+  border: none;
+  background: #ef4444;
+  color: #fff;
+  padding: 9px 18px;
+  border-radius: 8px;
+  font-size: 13.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+
+  &:hover {
+    background: #dc2626;
+  }
+}
+
+.modal-sm {
+  width: 340px;
+}
+
 /* 过渡动画 */
 .modal-fade-enter-active,
 .modal-fade-leave-active {
@@ -680,5 +1002,166 @@ function getIconColor(icon: string): string {
     transform: translateY(12px) scale(0.97);
     opacity: 0;
   }
+}
+
+/* ====== 场景详情面板 ====== */
+.detail-section {
+  border-color: var(--color-border);
+  background: #fff;
+}
+
+.detail-header {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  margin-bottom: 16px;
+  width: fit-content;
+
+  .detail-icon {
+    font-size: 22px;
+    flex-shrink: 0;
+    line-height: 1;
+
+    &.letter-avatar {
+      width: 28px;
+      height: 28px;
+      margin: 0;
+      border-radius: 6px;
+      display: inline-flex !important;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-weight: 600;
+      font-size: 14px !important;
+    }
+  }
+
+  .detail-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--color-text-primary);
+    line-height: 1.2;
+  }
+}
+
+.detail-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.detail-field {
+  .field-label {
+    display: block;
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--color-text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 5px;
+  }
+
+  .field-content {
+    font-size: 13.5px;
+    line-height: 1.6;
+    color: var(--color-text-primary);
+    margin: 0;
+    position: relative;
+  }
+}
+
+/* 详情面板过渡动画 */
+.detail-fade-enter-active,
+.detail-fade-leave-active {
+  transition: all 0.25s ease;
+}
+
+.detail-fade-enter-from,
+.detail-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+
+/* 弹窗内文本框 */
+.scene-textarea {
+  width: 100%;
+  padding: 10px 13px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--color-text-primary);
+  background: var(--color-bg-secondary);
+  outline: none;
+  resize: vertical;
+  transition: border-color 0.2s;
+  box-sizing: border-box;
+  font-family: inherit;
+
+  &::placeholder {
+    color: var(--color-text-tertiary);
+  }
+
+  &:focus {
+    border-color: var(--color-accent);
+    box-shadow: 0 0 0 3px var(--color-accent-subtle);
+  }
+}
+
+/* ====== 内联编辑样式 ====== */
+.editable-text {
+  cursor: text;
+  padding: 8px 10px;
+  border-radius: 6px;
+  transition: background-color 0.15s, color 0.15s;
+
+  &:hover {
+    background: rgba(79, 70, 229, 0.04);
+    color: var(--color-text-primary);
+  }
+
+  &.empty {
+    color: var(--color-text-tertiary);
+
+    &:hover {
+      color: var(--color-text-secondary);
+    }
+  }
+
+  &::after {
+    content: '';
+    position: absolute;
+    right: 6px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 14px;
+    height: 14px;
+    opacity: 0;
+    transition: opacity 0.15s;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2'%3E%3Cpath d='M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7'%3E%3C/path%3E%3Cpath d='M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z'%3E%3C/path%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: center;
+  }
+
+  &:hover::after {
+    opacity: 1;
+  }
+}
+
+.editable-input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1.5px solid var(--color-accent) !important;
+  border-radius: 6px !important;
+  font-size: 13.5px !important;
+  line-height: 1.55 !important;
+  color: var(--color-text-primary) !important;
+  background: #fff !important;
+  outline: none;
+  resize: vertical;
+  box-shadow: 0 0 0 3px var(--color-accent-subtle) !important;
+  box-sizing: border-box;
+  font-family: inherit;
 }
 </style>
