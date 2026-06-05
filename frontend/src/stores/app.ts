@@ -1,6 +1,12 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { getSceneList, type SceneItem } from '@/api/scenes'
+import {
+  getConversationList,
+  createConversation,
+  deleteConversation,
+  type ConversationItem
+} from '@/api/conversations'
 
 export interface ChatHistory {
   id: string
@@ -17,14 +23,8 @@ export interface RecordingState {
 
 export const useAppStore = defineStore('app', () => {
   // ========== 状态 ==========
-  const chatHistories = ref<ChatHistory[]>([
-    { id: '1', title: '日常问候对话练习', createdAt: new Date(), isActive: true },
-    { id: '2', title: '餐厅点餐场景模拟', createdAt: new Date(), isActive: false },
-    { id: '3', title: '商务会议英语交流', createdAt: new Date(), isActive: false },
-    { id: '4', title: '旅游问路场景练习', createdAt: new Date(), isActive: false },
-    { id: '5', title: '面试自我介绍训练', createdAt: new Date(), isActive: false },
-    { id: '6', title: '购物场景对话', createdAt: new Date(), isActive: false }
-  ])
+  const chatHistories = ref<ChatHistory[]>([])
+  const conversationsLoaded = ref(false)
 
   // 场景列表（从后端加载）
   const scenes = ref<SceneItem[]>([])
@@ -64,15 +64,50 @@ export const useAppStore = defineStore('app', () => {
     }
   }
 
-  function createNewChat() {
-    const newId = Date.now().toString()
-    chatHistories.value.forEach(h => (h.isActive = false))
-    chatHistories.value.unshift({
-      id: newId,
-      title: `新对话 ${new Date().toLocaleDateString()}`,
-      createdAt: new Date(),
-      isActive: true
-    })
+  /** 从后端加载会话历史 */
+  async function fetchConversations() {
+    try {
+      const res = await getConversationList(userId.value)
+      if (res.code === 200 && res.data) {
+        chatHistories.value = res.data.map(item => ({
+          id: String(item.conversationId),
+          title: item.title,
+          createdAt: new Date(item.createTime),
+          isActive: false
+        }))
+        // 默认选中第一条（最新）
+        if (chatHistories.value.length > 0) {
+          chatHistories.value[0].isActive = true
+        }
+        conversationsLoaded.value = true
+      }
+    } catch (e) {
+      console.error('加载会话失败:', e)
+      conversationsLoaded.value = true
+    }
+  }
+
+  async function createNewChat() {
+    try {
+      const res = await createConversation({
+        userId: userId.value,
+        sceneId: undefined // 后续可关联当前场景
+      })
+      if (res.code === 200 && res.data) {
+        const item = res.data
+        const newHistory: ChatHistory = {
+          id: String(item.conversationId),
+          title: item.title,
+          createdAt: new Date(item.createTime),
+          isActive: true
+        }
+        // 全部取消激活，新会话置顶
+        chatHistories.value.forEach(h => (h.isActive = false))
+        chatHistories.value.unshift(newHistory)
+      }
+    } catch (e) {
+      console.error('创建会话失败:', e)
+    }
   }
 
   function selectChat(id: string) {
@@ -108,12 +143,30 @@ export const useAppStore = defineStore('app', () => {
     recordingState.value.duration = seconds
   }
 
+  async function deleteChat(id: string) {
+    try {
+      await deleteConversation(Number(id))
+      const idx = chatHistories.value.findIndex(h => h.id === id)
+      if (idx !== -1) {
+        const wasActive = chatHistories.value[idx].isActive
+        chatHistories.value.splice(idx, 1)
+        // 如果删的是当前激活的，自动激活第一条
+        if (wasActive && chatHistories.value.length > 0) {
+          chatHistories.value[0].isActive = true
+        }
+      }
+    } catch (e) {
+      console.error('删除会话失败:', e)
+    }
+  }
+
   function toggleFavorite() {
     isFavorited.value = !isFavorited.value
   }
 
   return {
     chatHistories,
+    conversationsLoaded,
     recordingState,
     currentScene,
     isFavorited,
@@ -123,8 +176,10 @@ export const useAppStore = defineStore('app', () => {
     scenesLoaded,
     userId,
     fetchScenes,
+    fetchConversations,
     createNewChat,
     selectChat,
+    deleteChat,
     toggleRecording,
     startRecording,
     stopRecording,

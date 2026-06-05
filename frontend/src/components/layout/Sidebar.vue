@@ -37,6 +37,16 @@
             </svg>
           </span>
           <span class="item-text">{{ chat.title }}</span>
+          <!-- 删除按钮（hover 显示） -->
+          <span
+            class="history-delete-btn"
+            @click.stop="store.deleteChat(chat.id)"
+            title="删除对话"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+              <path d="M18 6L6 18M6 6l12 12"/>
+            </svg>
+          </span>
         </li>
       </ul>
     </div>
@@ -58,8 +68,13 @@
 
 <script setup lang="ts">
 import { useAppStore } from '@/stores/app'
+import { onMounted } from 'vue'
 
 const store = useAppStore()
+
+onMounted(() => {
+  store.fetchConversations()
+})
 </script>
 
 <style lang="scss" scoped>
@@ -172,11 +187,37 @@ const store = useAppStore()
     text-overflow: ellipsis;
   }
 
+  // 历史项删除按钮
+  .history-delete-btn {
+    margin-left: auto;
+    flex-shrink: 0;
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    color: var(--color-text-tertiary);
+    opacity: 0;
+    transition: all 0.15s;
+    pointer-events: none;
+
+    &:hover {
+      background: #fee2e2;
+      color: #ef4444;
+    }
+  }
+
   &:hover {
     background: var(--color-bg-hover);
 
     .item-text {
       color: var(--color-text-primary);
+    }
+
+    .history-delete-btn {
+      opacity: 1;
+      pointer-events: auto;
     }
   }
 
