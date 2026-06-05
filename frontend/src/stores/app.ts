@@ -5,6 +5,7 @@ import {
   getConversationList,
   createConversation,
   deleteConversation,
+  updateConversationTitle,
   type ConversationItem
 } from '@/api/conversations'
 
@@ -13,6 +14,8 @@ export interface ChatHistory {
   title: string
   createdAt: Date
   isActive: boolean
+  /** 关联的场景名称 */
+  sceneName: string
 }
 
 export interface RecordingState {
@@ -66,18 +69,33 @@ export const useAppStore = defineStore('app', () => {
 
   /** 从后端加载会话历史 */
   async function fetchConversations() {
+    // 记住当前激活的会话ID，加载后恢复
+    const prevActiveId = chatHistories.value.find(h => h.isActive)?.id || ''
     try {
       const res = await getConversationList(userId.value)
       if (res.code === 200 && res.data) {
+        // 场景名查找表（sceneId → sceneName）
+        const sceneMap = new Map<number, string>()
+        scenes.value.forEach(s => sceneMap.set(Number(s.sceneId), s.sceneName))
+
         chatHistories.value = res.data.map(item => ({
           id: String(item.conversationId),
           title: item.title,
           createdAt: new Date(item.createTime),
-          isActive: false
+          isActive: false,
+          sceneName: item.sceneId ? (sceneMap.get(item.sceneId) || '未知场景') : '未设置'
         }))
-        // 默认选中第一条（最新）
+        // 恢复之前的激活状态，若该会话已不存在则默认选第一条
         if (chatHistories.value.length > 0) {
-          chatHistories.value[0].isActive = true
+          const target = chatHistories.value.find(h => h.id === prevActiveId)
+          if (target) {
+            target.isActive = true
+          } else {
+            chatHistories.value[0].isActive = true
+          }
+          // 同步 Header 的场景名
+          const active = chatHistories.value.find(h => h.isActive)
+          if (active) currentScene.value = active.sceneName
         }
         conversationsLoaded.value = true
       }
@@ -87,23 +105,30 @@ export const useAppStore = defineStore('app', () => {
     }
   }
 
-  async function createNewChat() {
+  async function createNewChat(title?: string) {
     try {
       const res = await createConversation({
         userId: userId.value,
-        sceneId: undefined // 后续可关联当前场景
+        sceneId: undefined, // 后续可关联当前场景
+        title: title || undefined
       })
       if (res.code === 200 && res.data) {
         const item = res.data
+        // 查找场景名
+        const sceneName = item.sceneId
+          ? (scenes.value.find(s => Number(s.sceneId) === item.sceneId)?.sceneName || '未知场景')
+          : '未设置'
         const newHistory: ChatHistory = {
           id: String(item.conversationId),
           title: item.title,
           createdAt: new Date(item.createTime),
-          isActive: true
+          isActive: true,
+          sceneName
         }
         // 全部取消激活，新会话置顶
         chatHistories.value.forEach(h => (h.isActive = false))
         chatHistories.value.unshift(newHistory)
+        currentScene.value = sceneName
       }
     } catch (e) {
       console.error('创建会话失败:', e)
@@ -114,6 +139,20 @@ export const useAppStore = defineStore('app', () => {
     chatHistories.value.forEach(h => {
       h.isActive = h.id === id
     })
+    // 同步更新当前场景名
+    const active = chatHistories.value.find(h => h.id === id)
+    if (active) {
+      currentScene.value = active.sceneName
+    }
+  }
+
+  async function updateChatTitle(conversationId: number, title: string) {
+    const res = await updateConversationTitle(conversationId, title)
+    if (res.code === 200) {
+      // 同步更新本地状态
+      const item = chatHistories.value.find(h => h.id === String(conversationId))
+      if (item) item.title = title
+    }
   }
 
   function toggleRecording() {
@@ -179,6 +218,7 @@ export const useAppStore = defineStore('app', () => {
     fetchConversations,
     createNewChat,
     selectChat,
+    updateChatTitle,
     deleteChat,
     toggleRecording,
     startRecording,

@@ -87,3 +87,14 @@ CREATE TABLE IF NOT EXISTS `user_settings` (
 -- 默认用户设置
 INSERT INTO `user_settings` (`id`, `current_scene_id`, `difficulty`, `speech_speed`) VALUES
 (1, 1000000000000000001, 'intermediate', 1.0);
+
+-- ============================================
+-- 会话场景配置表（每个会话独立的描述和角色设定）
+-- ============================================
+CREATE TABLE IF NOT EXISTS `conversation_scene_config` (
+    `conversation_id` BIGINT       NOT NULL PRIMARY KEY COMMENT '会话ID（关联user_conversation）',
+    `description`     VARCHAR(512) NOT NULL COMMENT '本次对话的场景描述',
+    `role_setting`    VARCHAR(512) DEFAULT '' COMMENT '本次对话的角色设定',
+    `create_time`     DATETIME     DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `update_time`     DATETIME     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='会话场景配置表';

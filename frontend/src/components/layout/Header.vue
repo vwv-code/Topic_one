@@ -12,7 +12,21 @@
       <span class="scene-badge">{{ store.currentScene }}</span>
     </div>
 
-    <h1 class="header-center">AI 口语陪练</h1>
+    <div class="header-center">
+      <input
+        v-if="store.activeChatId"
+        ref="titleInputRef"
+        v-model="editingTitle"
+        class="title-input"
+        :class="{ editing: isEditing }"
+        placeholder="输入对话标题..."
+        maxlength="30"
+        @focus="isEditing = true"
+        @blur="handleSaveTitle"
+        @keyup.enter="titleInputRef?.blur()"
+      />
+      <span v-else class="header-title">AI 口语陪练</span>
+    </div>
 
     <div class="header-right">
       <button
@@ -29,9 +43,32 @@
 </template>
 
 <script setup lang="ts">
+import { ref, computed, watch, nextTick } from 'vue'
 import { useAppStore } from '@/stores/app'
 
 const store = useAppStore()
+
+const titleInputRef = ref<HTMLInputElement | null>(null)
+const isEditing = ref(false)
+const editingTitle = ref('')
+
+// 从当前激活会话的 title 同步
+const activeChatTitle = computed(() => {
+  const chat = store.chatHistories.find(h => h.isActive)
+  return chat?.title || ''
+})
+
+watch(activeChatTitle, (val) => {
+  editingTitle.value = val
+}, { immediate: true })
+
+async function handleSaveTitle() {
+  isEditing.value = false
+  const newTitle = editingTitle.value.trim()
+  if (!newTitle || !store.activeChatId) return
+  if (newTitle === activeChatTitle.value) return
+  await store.updateChatTitle(Number(store.activeChatId), newTitle)
+}
 </script>
 
 <style lang="scss" scoped>
@@ -83,10 +120,42 @@ const store = useAppStore()
 }
 
 .header-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.header-title {
   font-size: 15px;
   font-weight: 600;
   color: var(--color-text-primary);
   letter-spacing: -0.01em;
+}
+
+.title-input {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  letter-spacing: -0.01em;
+  border: none;
+  background: transparent;
+  text-align: center;
+  outline: none;
+  width: 200px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+
+  &.editing {
+    background: var(--color-bg-hover);
+    box-shadow: 0 0 0 1.5px var(--color-accent);
+    width: 240px;
+  }
+
+  &::placeholder {
+    color: var(--color-text-tertiary);
+    font-weight: 400;
+  }
 }
 
 .header-right {

@@ -6,6 +6,7 @@ import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
+import org.apache.ibatis.annotations.Update;
 
 import java.util.List;
 
@@ -29,4 +30,16 @@ public interface ConversationMapper extends BaseMapper<Conversation> {
      */
     @Delete("UPDATE user_conversation SET deleted = 1 WHERE conversation_id = #{conversationId}")
     int deleteById(@Param("conversationId") Long conversationId);
+
+    /**
+     * 更新会话关联的场景ID
+     */
+    @Update("UPDATE user_conversation SET scene_id = #{sceneId}, update_time = NOW() WHERE conversation_id = #{conversationId}")
+    int updateSceneId(@Param("conversationId") Long conversationId, @Param("sceneId") Long sceneId);
+
+    /**
+     * 更新会话标题
+     */
+    @Update("UPDATE user_conversation SET title = #{title}, update_time = NOW() WHERE conversation_id = #{conversationId}")
+    int updateTitle(@Param("conversationId") Long conversationId, @Param("title") String title);
 }

@@ -179,25 +179,6 @@
                   :style="{ background: previewColor }"
                 >{{ previewLetter }}</span>
               </div>
-
-              <label class="input-label" style="margin-top: 14px;">场景描述</label>
-              <textarea
-                v-model="customDescription"
-                class="scene-textarea"
-                placeholder="描述这个场景的背景、目标和适用情况..."
-                rows="3"
-                maxlength="200"
-              ></textarea>
-
-              <label class="input-label" style="margin-top: 14px;">角色设定</label>
-              <textarea
-                v-model="customRoleSetting"
-                class="scene-textarea"
-                placeholder="设定AI在这个场景中的角色，例如：你是一位友好的酒店前台接待员..."
-                rows="2"
-                maxlength="200"
-              ></textarea>
-              <p class="input-hint">填写描述与角色设定后点击确认</p>
             </div>
             <div class="modal-footer">
               <button class="btn-cancel" @click="showModal = false">取消</button>
@@ -238,6 +219,7 @@
 import { reactive, ref, nextTick, watch, computed, onMounted } from 'vue'
 import { useAppStore } from '@/stores/app'
 import { createScene, getSettings, saveSettings, deleteScene } from '@/api/scenes'
+import { getConversationConfig } from '@/api/conversations'
 import type { SceneItem } from '@/api/scenes'
 
 const store = useAppStore()
@@ -321,11 +303,9 @@ const editRoleSetting = ref('')
 const descTextareaRef = ref<HTMLTextAreaElement | null>(null)
 const roleTextareaRef = ref<HTMLTextAreaElement | null>(null)
 
-// 选中场景变化时，同步编辑值
+// 选中场景变化时，不再自动覆盖描述/角色设定（这些来自会话级配置）
 watch(selectedScene, (scene) => {
   if (scene) {
-    editDescription.value = scene.description || ''
-    editRoleSetting.value = scene.roleSetting || ''
     editingField.value = null
   }
 }, { immediate: true })
@@ -367,33 +347,47 @@ watch(showModal, (val) => {
   }
 })
 
-// 页面加载时从后端拉取场景列表 + 已存设置
+// 页面加载时：
+// 1. 场景列表 → 从 scenes 表读取（可选场景池）
+// 2. 当前选中场景 + 描述/角色设定 → 从 conversation_scene_config 按 conversationId 读取
+// 3. 难度、语速 → 从 user_settings 读取
 onMounted(async () => {
-  // 并行加载场景列表和用户设置
-  const [scenesRes, settingsRes] = await Promise.allSettled([
-    store.scenes.length === 0 ? store.fetchScenes() : Promise.resolve(),
-    getSettings(store.userId)
+  // 每次进入设置页都从后端刷新场景列表（确保数据最新）
+  await store.fetchScenes()
+
+  // 并行加载：用户设置 + 会话场景配置（如果有激活会话）
+  const activeId = store.activeChatId ? Number(store.activeChatId) : null
+
+  const [settingsRes, configRes] = await Promise.allSettled([
+    getSettings(store.userId),
+    activeId ? getConversationConfig(activeId) : Promise.resolve(null)
   ]) as [
-    PromiseSettledResult<void>,
-    PromiseSettledResult<{ code: number; data: import('@/api/scenes').UserSettings }>
+    PromiseSettledResult<{ code: number; data: import('@/api/scenes').UserSettings }>,
+    PromiseSettledResult<{ code: number; data: import('@/api/conversations').ConversationConfig | null } | null>
   ]
 
-  // 场景列表
+  // --- 场景选中状态 + 描述/角色设定（来自 conversation_scene_config） ---
   if (allScenes.value.length > 0) {
-    // 优先用已保存的场景ID，否则默认第一个
-    if (settingsRes.status === 'fulfilled' && settingsRes.value.data?.currentSceneId) {
-      const savedSceneId = String(settingsRes.value.data.currentSceneId)
-      if (allScenes.value.some(s => s.value === savedSceneId)) {
-        form.scene = savedSceneId
+    if (configRes.status === 'fulfilled' && configRes.value?.data) {
+      // 有会话配置 → 用会话级数据
+      const cfg = configRes.value.data
+      const sceneIdStr = cfg.sceneId ? String(cfg.sceneId) : ''
+      if (sceneIdStr && allScenes.value.some(s => s.value === sceneIdStr)) {
+        form.scene = sceneIdStr
       } else {
         form.scene = allScenes.value[0].value
       }
+      editDescription.value = cfg.description || ''
+      editRoleSetting.value = cfg.roleSetting || ''
     } else {
+      // 无会话 / 无配置 → 默认第一个场景，描述和角色设定为空
       form.scene = allScenes.value[0].value
+      editDescription.value = ''
+      editRoleSetting.value = ''
     }
   }
 
-  // 用户设置（难度、语速）
+  // --- 用户设置（难度、语速） ---
   if (settingsRes.status === 'fulfilled' && settingsRes.value.data) {
     const s = settingsRes.value.data
     form.difficulty = s.difficulty || 'intermediate'
@@ -410,8 +404,7 @@ async function handleConfirm() {
     const res = await createScene({
       userId: store.userId,
       sceneName: name,
-      description: customDescription.value.trim() || `自定义场景：${name}`,
-      roleSetting: customRoleSetting.value.trim(),
+      description: `自定义场景：${name}`,
       difficulty: 1
     })
 
@@ -420,9 +413,14 @@ async function handleConfirm() {
       store.scenes.push(res.data)
       form.scene = String(res.data.sceneId)
       showModal.value = false
+      // 重置表单
+      customSceneName.value = ''
+    } else {
+      alert('创建失败：服务器返回异常')
     }
-  } catch (e) {
+  } catch (e: any) {
     console.error('创建自定义场景失败:', e)
+    alert(e?.response?.data?.message || e?.message || '创建失败，请检查网络或后端服务是否启动')
   } finally {
     creating.value = false
   }
@@ -479,17 +477,9 @@ async function handleSave() {
       speechSpeed: form.speed,
       sceneId: selected ? Number(selected.value) : null,
       description: editDescription.value,
-      roleSetting: editRoleSetting.value
+      roleSetting: editRoleSetting.value,
+      conversationId: store.activeChatId ? Number(store.activeChatId) : null
     })
-
-    // 同步更新本地 store 中的场景数据
-    if (selected) {
-      const storeScene = store.scenes.find(s => s.sceneId === Number(selected.value))
-      if (storeScene) {
-        storeScene.description = editDescription.value
-        storeScene.roleSetting = editRoleSetting.value
-      }
-    }
 
     alert('设置已保存')
   } catch (e) {
