@@ -66,8 +66,15 @@ async function handleSaveTitle() {
   isEditing.value = false
   const newTitle = editingTitle.value.trim()
   if (!newTitle || !store.activeChatId) return
-  if (newTitle === activeChatTitle.value) return
-  await store.updateChatTitle(Number(store.activeChatId), newTitle)
+  // 恢复原标题（保存失败时回滚）
+  const oldTitle = activeChatTitle.value
+  if (newTitle === oldTitle) return
+  try {
+    await store.updateChatTitle(Number(store.activeChatId), newTitle)
+  } catch (e) {
+    console.error('保存标题失败:', e)
+    editingTitle.value = oldTitle
+  }
 }
 </script>
 
