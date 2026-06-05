@@ -4,6 +4,7 @@ import com.topicone.dto.ConversationDTO;
 import com.topicone.dto.CreateConversationRequest;
 import com.topicone.entity.Conversation;
 import com.topicone.mapper.ConversationMapper;
+import com.topicone.service.ConversationSceneConfigService;
 import com.topicone.service.ConversationService;
 import com.topicone.service.UserSettingService;
 import lombok.RequiredArgsConstructor;
@@ -21,6 +22,7 @@ public class ConversationServiceImpl implements ConversationService {
 
     private final ConversationMapper conversationMapper;
     private final UserSettingService userSettingService;
+    private final ConversationSceneConfigService configService;
 
     @Override
     public List<ConversationDTO> getConversationList(Long userId) {
@@ -49,12 +51,30 @@ public class ConversationServiceImpl implements ConversationService {
         conv.setCreateTime(LocalDateTime.now());
         conv.setUpdateTime(LocalDateTime.now());
         conversationMapper.insert(conv);
+
+        // 从 scenes 表拷贝默认描述和角色设定到新表
+        configService.initConfig(conv.getConversationId(), sceneId);
+
         return toDTO(conv);
     }
 
     @Override
     public void deleteConversation(Long conversationId) {
         int rows = conversationMapper.deleteById(conversationId);
+        if (rows == 0) {
+            throw new com.topicone.common.exception.BusinessException("会话不存在或已被删除");
+        }
+    }
+
+    @Override
+    public ConversationDTO getConversationById(Long conversationId) {
+        Conversation conv = conversationMapper.selectByConversationId(conversationId);
+        return conv != null ? toDTO(conv) : null;
+    }
+
+    @Override
+    public void updateTitle(Long conversationId, String title) {
+        int rows = conversationMapper.updateTitle(conversationId, title);
         if (rows == 0) {
             throw new com.topicone.common.exception.BusinessException("会话不存在或已被删除");
         }

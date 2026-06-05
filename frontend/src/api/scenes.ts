@@ -42,6 +42,8 @@ export interface SaveSettingsPayload {
   description: string
   /** 角色设定 */
   roleSetting: string
+  /** 当前激活的会话ID（有值时写入会话级配置表，否则更新场景默认模板） */
+  conversationId?: number | null
 }
 
 /**

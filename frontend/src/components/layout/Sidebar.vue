@@ -11,13 +11,41 @@
         </div>
         <span class="logo-text">AI 口语陪练</span>
       </div>
-      <button class="new-chat-btn" @click="store.createNewChat()">
+      <button class="new-chat-btn" @click="showTitleModal = true">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
           <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
         </svg>
         新对话
       </button>
     </div>
+
+    <!-- 新对话标题弹窗 -->
+    <Teleport to="body">
+      <Transition name="modal-fade">
+        <div v-if="showTitleModal" class="modal-overlay" @click.self="showTitleModal = false">
+          <div class="title-modal">
+            <h3>新建对话</h3>
+            <input
+              v-model="newChatTitle"
+              ref="titleInputRef"
+              type="text"
+              class="title-input"
+              placeholder="请输入对话标题..."
+              maxlength="50"
+              @keyup.enter="confirmNewChat"
+            />
+            <div class="title-modal-footer">
+              <button class="btn-cancel" @click="showTitleModal = false">取消</button>
+              <button
+                class="btn-confirm"
+                :disabled="!newChatTitle.trim()"
+                @click="confirmNewChat"
+              >确认</button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
 
     <div class="chat-history">
       <div class="history-title">对话历史</div>
@@ -37,6 +65,7 @@
             </svg>
           </span>
           <span class="item-text">{{ chat.title }}</span>
+          <span v-if="chat.sceneName" class="scene-tag">{{ chat.sceneName }}</span>
           <!-- 删除按钮（hover 显示） -->
           <span
             class="history-delete-btn"
@@ -67,12 +96,34 @@
 </template>
 
 <script setup lang="ts">
+import { ref, nextTick, watch } from 'vue'
 import { useAppStore } from '@/stores/app'
 import { onMounted } from 'vue'
 
 const store = useAppStore()
 
-onMounted(() => {
+// 新对话标题弹窗
+const showTitleModal = ref(false)
+const newChatTitle = ref('')
+const titleInputRef = ref<HTMLInputElement | null>(null)
+
+watch(showTitleModal, (val) => {
+  if (val) {
+    newChatTitle.value = ''
+    nextTick(() => titleInputRef.value?.focus())
+  }
+})
+
+async function confirmNewChat() {
+  const title = newChatTitle.value.trim()
+  if (!title) return
+  showTitleModal.value = false
+  await store.createNewChat(title)
+}
+
+onMounted(async () => {
+  // 先加载场景列表（用于解析会话的场景名），再加载会话历史
+  if (!store.scenesLoaded) await store.fetchScenes()
   store.fetchConversations()
 })
 </script>
@@ -185,6 +236,19 @@ onMounted(() => {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    flex: 1;
+    min-width: 0;
+  }
+
+  // 场景名标签
+  .scene-tag {
+    flex-shrink: 0;
+    font-size: 11px;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: var(--color-bg-tertiary);
+    color: var(--color-text-tertiary);
+    white-space: nowrap;
   }
 
   // 历史项删除按钮
@@ -269,5 +333,82 @@ onMounted(() => {
   font-size: 12px;
   color: var(--color-text-tertiary);
   margin-top: 1px;
+}
+
+/* 新对话标题弹窗 */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(17, 24, 39, 0.35);
+  backdrop-filter: blur(4px);
+}
+
+.title-modal {
+  width: 360px;
+  max-width: 90vw;
+  background: var(--color-bg-primary);
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.08);
+  padding: 24px;
+
+  h3 {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--color-text-primary);
+    margin: 0 0 16px;
+  }
+
+  .title-input {
+    width: 100%;
+    padding: 10px 14px;
+    border: 1px solid var(--color-border-hover);
+    border-radius: 8px;
+    font-size: 14px;
+    color: var(--color-text-primary);
+    outline: none;
+    transition: border-color 0.2s;
+    box-sizing: border-box;
+
+    &::placeholder { color: var(--color-text-tertiary); }
+    &:focus { border-color: var(--color-accent); }
+  }
+
+  .title-modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 16px;
+  }
+
+  .btn-cancel,
+  .btn-confirm {
+    padding: 8px 18px;
+    border-radius: 8px;
+    font-size: 13.5px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .btn-cancel {
+    border: 1px solid var(--color-border);
+    background: transparent;
+    color: var(--color-text-secondary);
+
+    &:hover { background: var(--color-bg-tertiary); }
+  }
+
+  .btn-confirm {
+    border: none;
+    background: var(--color-accent);
+    color: #fff;
+
+    &:hover:not(:disabled) { background: var(--color-accent-hover); }
+    &:disabled { opacity: 0.5; cursor: not-allowed; }
+  }
 }
 </style>

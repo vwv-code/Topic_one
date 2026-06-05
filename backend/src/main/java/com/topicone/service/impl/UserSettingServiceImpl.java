@@ -3,8 +3,10 @@ package com.topicone.service.impl;
 import com.topicone.dto.SaveSettingsRequest;
 import com.topicone.dto.UserSettingsDTO;
 import com.topicone.entity.UserSetting;
+import com.topicone.mapper.ConversationMapper;
 import com.topicone.mapper.SceneMapper;
 import com.topicone.mapper.UserSettingMapper;
+import com.topicone.service.ConversationSceneConfigService;
 import com.topicone.service.UserSettingService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.BeanUtils;
@@ -16,6 +18,8 @@ public class UserSettingServiceImpl implements UserSettingService {
 
     private final UserSettingMapper userSettingMapper;
     private final SceneMapper sceneMapper;
+    private final ConversationMapper conversationMapper;
+    private final ConversationSceneConfigService configService;
 
     @Override
     public UserSettingsDTO getSettings(Long userId) {
@@ -51,13 +55,22 @@ public class UserSettingServiceImpl implements UserSettingService {
             userSettingMapper.updateById(existing);
         }
 
-        // 2. 同步更新当前场景的描述和角色设定
-        if (request.getSceneId() != null) {
-            sceneMapper.updateBySceneId(
-                request.getSceneId(),
-                request.getDescription(),
-                request.getRoleSetting()
-            );
+        // 2. 场景相关配置
+        if (request.getConversationId() != null) {
+            // 有激活会话
+            // 2a. 更新 user_conversation.scene_id
+            if (request.getSceneId() != null) {
+                conversationMapper.updateSceneId(request.getConversationId(), request.getSceneId());
+            }
+            // 2b. 更新 conversation_scene_config 的描述和角色设定
+            String desc = request.getDescription() != null ? request.getDescription() : "";
+            String role = request.getRoleSetting() != null ? request.getRoleSetting() : "";
+            configService.updateConfig(request.getConversationId(), desc, role);
+        } else {
+            // 无激活会话 → 更新 scenes 表作为默认模板
+            String desc = request.getDescription() != null ? request.getDescription() : "";
+            String role = request.getRoleSetting() != null ? request.getRoleSetting() : "";
+            sceneMapper.updateBySceneId(request.getSceneId(), desc, role);
         }
     }
 }

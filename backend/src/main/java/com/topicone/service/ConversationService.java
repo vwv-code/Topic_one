@@ -21,4 +21,14 @@ public interface ConversationService {
      * 删除会话（逻辑删除）
      */
     void deleteConversation(Long conversationId);
+
+    /**
+     * 按 ID 查询单个会话
+     */
+    ConversationDTO getConversationById(Long conversationId);
+
+    /**
+     * 更新会话标题
+     */
+    void updateTitle(Long conversationId, String title);
 }
