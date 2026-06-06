@@ -50,12 +50,37 @@ minio:
   secret-key: minioadmin
   bucket-name: topic-one-audio
 
-# ====== AI 服务配置（预留）======
+# ====== AI 服务配置 ======
+
+# 通义千问 LLM（DashScope）
 ai:
-  api-key: your-api-key-here
-  model: gpt-4o
-  base-url: https://api.openai.com/v1/chat/completions
-  tts-url: https://api.openai.com/v1/audio/speech
+  dashscope:
+    api-key: ${DASHSCOPE_API_KEY:}
+  llm:
+    model: qwen-turbo  # 可选: qwen-turbo / qwen-plus / qwen-max
+
+# 阿里云语音识别 ASR（Paraformer 实时转写）
+asr:
+  access-key-id: ${ALIYUN_ACCESS_KEY_ID:}
+  access-key-secret: ${ALIYUN_ACCESS_KEY_SECRET:}
+  app-key: ${ALIYUN_NLS_APP_KEY:}
+  # 音频参数
+  format: pcm        # 输入格式：pcm
+  sample-rate: 16000 # 采样率：16kHz
+  enable-punctuation: true
+  enable-intermediate-result: true  # 开启中间结果返回
+
+# 阿里云语音合成 TTS
+tts:
+  access-key-id: ${ALIYUN_ACCESS_KEY_ID:}
+  access-key-secret: ${ALIYUN_ACCESS_KEY_SECRET:}
+  app-key: ${ALIYUN_NLS_APP_KEY:}
+  voice: xiaoyun      # 免费发音人：xiaoyun(小云-女)/xiaogang(小刚-男)
+  format: pcm          # 输出格式：pcm/mp3
+  sample-rate: 16000   # 采样率
+  volume: 50           # 音量 0-100
+  speech-rate: 0       # 语速 -500~500，0为正常
+  pitch-rate: 0        # 语调 -500~500，0为正常
 
 # ====== 日志配置 ======
 logging:
