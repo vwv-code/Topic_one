@@ -58,6 +58,8 @@ ai:
     api-key: ${DASHSCOPE_API_KEY:}
   llm:
     model: qwen-turbo  # 可选: qwen-turbo / qwen-plus / qwen-max
+  image:
+    model: qwen-image-plus  # 文生图模型: qwen-image-plus / qwen-image-max
 
 # 阿里云语音识别 ASR（Paraformer 实时转写）
 asr:

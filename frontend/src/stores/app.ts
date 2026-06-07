@@ -8,6 +8,7 @@ import {
   updateConversationTitle,
   type ConversationItem
 } from '@/api/conversations'
+import { getBackground } from '@/api/background'
 
 export interface ChatHistory {
   id: string
@@ -123,6 +124,24 @@ export const useAppStore = defineStore('app', () => {
   /** 评测面板是否展开 */
   const pronunciationPanelVisible = ref(false)
 
+  // ========== 沉浸式体验状态 ==========
+  /** 是否开启沉浸式体验 */
+  const immersiveEnabled = ref(false)
+  /** 背景图 URL */
+  const backgroundImageUrl = ref<string | null>(null)
+  /** 背景图是否加载中 */
+  const backgroundLoading = ref(false)
+
+  // ========== TTS 音量状态 ==========
+  /** TTS 音量 (0-100) */
+  const ttsVolume = ref(50)
+  function setTtsVolume(vol: number) {
+    ttsVolume.value = Math.max(0, Math.min(100, vol))
+    if (ttsGainNode) {
+      ttsGainNode.gain.value = ttsVolume.value / 100
+    }
+  }
+
   /** WebSocket 实例 */
   let ws: WebSocket | null = null
 
@@ -139,6 +158,11 @@ export const useAppStore = defineStore('app', () => {
   // ========== 计算属性 ==========
   const activeChatId = computed(() =>
     chatHistories.value.find(h => h.isActive)?.id || ''
+  )
+
+  /** 沉浸式全屏：开启沉浸体验 + 非待机状态（录音/处理/播放中） */
+  const isImmersiveFullscreen = computed(() =>
+    immersiveEnabled.value && aiStatus.value !== 'ready'
   )
 
   // ========== 方法 ==========
@@ -466,9 +490,18 @@ export const useAppStore = defineStore('app', () => {
         break
 
       case 'pronunciation_complete':
-        // 全部评测完成
+        // 全部评测完成 → 退出沉浸式全屏 + 关闭连接
         pronunciationEvaluating.value = false
         pronunciationPanelVisible.value = true
+        aiStatus.value = 'ready'
+        // 清理 WebSocket 但不清除评测结果
+        stopPcmRecording()
+        if (ws) { ws.close(); ws = null }
+        recordingState.value.isRecording = false
+        wsStatus.value = 'disconnected' as WsConnectionStatus
+        recognitionText.value = ''
+        aiStreamingText.value = ''
+        hideSubtitle()
         console.log('[Voice] 发音评测完成, 共', pronunciationResults.value.length, '条结果')
         break
 
@@ -698,6 +731,8 @@ export const useAppStore = defineStore('app', () => {
 
   /** 复用的 AudioContext（避免每片创建/销毁造成的断档和杂音） */
   let ttsAudioContext: AudioContext | null = null
+  /** 音量控制节点（GainNode，连接在 source → destination 之间） */
+  let ttsGainNode: GainNode | null = null
   /** 下一次 source.start(t) 的时间（秒），在同一个 ctx.currentTime 时间线上调度 */
   let ttsNextStartTime = 0
   /** 已调度的 source 节点集合（用于生命周期追踪） */
@@ -728,6 +763,10 @@ export const useAppStore = defineStore('app', () => {
     // 复用或创建 AudioContext
     if (!ttsAudioContext || ttsAudioContext.state === 'closed') {
       ttsAudioContext = new AudioContext({ sampleRate: 16000 })
+      // 创建 GainNode 用于音量控制
+      ttsGainNode = ttsAudioContext.createGain()
+      ttsGainNode.gain.value = ttsVolume.value / 100
+      ttsGainNode.connect(ttsAudioContext.destination)
     }
     if (ttsAudioContext.state === 'suspended') {
       ttsAudioContext.resume()
@@ -784,7 +823,7 @@ export const useAppStore = defineStore('app', () => {
 
         const source = ctx.createBufferSource()
         source.buffer = audioBuffer
-        source.connect(ctx.destination)
+        source.connect(ttsGainNode!)
 
         const startTime = ttsNextStartTime
         ttsNextStartTime += duration
@@ -836,6 +875,7 @@ export const useAppStore = defineStore('app', () => {
     if (ttsAudioContext && ttsAudioContext.state !== 'closed') {
       ttsAudioContext.close().catch(() => {})
       ttsAudioContext = null
+      ttsGainNode = null
     }
   }
 
@@ -867,14 +907,47 @@ export const useAppStore = defineStore('app', () => {
   function toggleSubtitle() {
     subtitleEnabled.value = !subtitleEnabled.value
     if (subtitleEnabled.value) {
-      // 开启时：如果状态活跃且有字幕文字，立即显示
       if (aiStatus.value !== 'ready' && subtitleText.value) {
         subtitleVisible.value = true
       }
     } else {
-      // 关闭时立即隐藏
       hideSubtitle()
     }
+  }
+
+  /** 开启沉浸式体验：获取/生成背景图 */
+  async function enableImmersive() {
+    const convId = Number(activeChatId.value)
+    backgroundLoading.value = true
+    immersiveEnabled.value = true
+
+    if (!convId) {
+      console.warn('[沉浸体验] 没有激活的会话')
+      backgroundLoading.value = false
+      return
+    }
+
+    try {
+      console.log('[沉浸体验] 请求背景图, conversationId=', convId)
+      const res = await getBackground(convId)
+      console.log('[沉浸体验] 响应:', res)
+      if (res.code === 200 && res.data) {
+        if (res.data.hasImage && res.data.imageUrl) {
+          backgroundImageUrl.value = res.data.imageUrl
+          console.log('[沉浸体验] 背景图已应用:', backgroundImageUrl.value)
+        }
+      }
+    } catch (e) {
+      console.error('获取背景图失败:', e)
+    } finally {
+      backgroundLoading.value = false
+    }
+  }
+
+  /** 关闭沉浸式体验 */
+  function disableImmersive() {
+    immersiveEnabled.value = false
+    backgroundImageUrl.value = null
   }
 
   /** 显示字幕（语音播放前0.3s调用） */
@@ -933,10 +1006,20 @@ export const useAppStore = defineStore('app', () => {
     subtitleEnabled,
     subtitleVisible,
     subtitleText,
+    // TTS 音量
+    ttsVolume,
+    setTtsVolume,
     // 发音评测状态
     pronunciationResults,
     pronunciationEvaluating,
     pronunciationPanelVisible,
+    // 沉浸式体验状态
+    immersiveEnabled,
+    backgroundImageUrl,
+    backgroundLoading,
+    isImmersiveFullscreen,
+    enableImmersive,
+    disableImmersive,
     // 场景和会话
     fetchScenes,
     fetchConversations,

@@ -155,3 +155,18 @@ CREATE TABLE IF NOT EXISTS `daily_summary` (
     `update_time`         DATETIME     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     INDEX `idx_ds_user_date` (`user_id`, `summary_date`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='每日口语总结表';
+
+-- ============================================
+-- 会话背景图表（AI 生成的沉浸式体验背景图）
+-- ============================================
+CREATE TABLE IF NOT EXISTS `conversation_background` (
+    `id`                BIGINT       NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    `user_id`           BIGINT       NOT NULL COMMENT '用户ID',
+    `conversation_id`   BIGINT       NOT NULL COMMENT '会话ID',
+    `scene_description` VARCHAR(1024) NOT NULL COMMENT '场景描述（用于生成图片的提示词来源）',
+    `prompt`            VARCHAR(2048) COMMENT '实际发送给模型的提示词',
+    `image_url`         VARCHAR(1024) NOT NULL COMMENT '生成图片的URL',
+    `create_time`       DATETIME     DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    UNIQUE INDEX `uk_conversation` (`conversation_id`),
+    INDEX `idx_user` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='会话背景图表';

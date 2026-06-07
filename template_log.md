@@ -1,148 +1,246 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>新拟态登录界面</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
-    <style type="text/tailwindcss">
-        @layer utilities {
-            .neu-card {
-                background: #e0e5ec;
-                box-shadow: 20px 20px 60px #bec3c9, -20px -20px 60px #ffffff;
+    <title>Facebook Login Page</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: Helvetica, Arial, sans-serif;
+        }
+
+        body {
+            background-color: #f0f2f5;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            max-width: 980px;
+            width: 100%;
+            gap: 80px;
+        }
+
+        /* 左侧Logo和标语 */
+        .left-section {
+            flex: 1;
+            max-width: 500px;
+        }
+
+        .left-section h1 {
+            color: #1877f2;
+            font-size: 56px;
+            font-weight: bold;
+            margin-bottom: 16px;
+        }
+
+        .left-section p {
+            font-size: 28px;
+            line-height: 32px;
+            color: #1c1e21;
+        }
+
+        /* 右侧登录表单 */
+        .right-section {
+            flex: 1;
+            max-width: 400px;
+        }
+
+        .login-card {
+            background-color: #ffffff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1), 0 8px 16px rgba(0, 0, 0, 0.1);
+        }
+
+        .form-group {
+            margin-bottom: 12px;
+            position: relative;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 14px 16px;
+            font-size: 17px;
+            border: 1px solid #dddfe2;
+            border-radius: 6px;
+            outline: none;
+            transition: border-color 0.2s ease;
+        }
+
+        .form-group input:focus {
+            border-color: #1877f2;
+            box-shadow: 0 0 0 2px #e7f3ff;
+        }
+
+        /* 错误状态样式 */
+        .form-group input.error {
+            border-color: #fa3e3e;
+        }
+
+        .error-message {
+            color: #fa3e3e;
+            font-size: 13px;
+            margin-top: 6px;
+            display: none;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .error-message::before {
+            content: "⚠️";
+        }
+
+        .login-btn {
+            width: 100%;
+            padding: 12px;
+            background-color: #1877f2;
+            color: #ffffff;
+            font-size: 20px;
+            font-weight: bold;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            margin-top: 6px;
+            transition: background-color 0.2s ease;
+        }
+
+        .login-btn:hover {
+            background-color: #166fe5;
+        }
+
+        .forgot-password {
+            text-align: center;
+            display: block;
+            margin: 16px 0;
+            color: #1877f2;
+            text-decoration: none;
+            font-size: 14px;
+        }
+
+        .forgot-password:hover {
+            text-decoration: underline;
+        }
+
+        .divider {
+            border-top: 1px solid #dadde1;
+            margin: 20px 0;
+        }
+
+        .create-account-btn {
+            display: block;
+            width: fit-content;
+            margin: 0 auto;
+            padding: 12px 20px;
+            background-color: #42b72a;
+            color: #ffffff;
+            font-size: 17px;
+            font-weight: bold;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+        }
+
+        .create-account-btn:hover {
+            background-color: #36a420;
+        }
+
+        /* 响应式设计 - 移动端 */
+        @media (max-width: 900px) {
+            .container {
+                flex-direction: column;
+                gap: 40px;
+                text-align: center;
             }
-            .neu-input {
-                background: #e0e5ec;
-                box-shadow: inset 6px 6px 12px #bec3c9, inset -6px -6px 12px #ffffff;
+
+            .left-section h1 {
+                font-size: 40px;
             }
-            .neu-btn {
-                background: #e0e5ec;
-                box-shadow: 6px 6px 12px #bec3c9, -6px -6px 12px #ffffff;
-                transition: all 0.3s ease;
-            }
-            .neu-btn:active {
-                box-shadow: inset 6px 6px 12px #bec3c9, inset -6px -6px 12px #ffffff;
-            }
-            .neu-social {
-                background: #e0e5ec;
-                box-shadow: 4px 4px 8px #bec3c9, -4px -4px 8px #ffffff;
-                transition: all 0.3s ease;
-            }
-            .neu-social:active {
-                box-shadow: inset 4px 4px 8px #bec3c9, inset -4px -4px 8px #ffffff;
+
+            .left-section p {
+                font-size: 22px;
             }
         }
     </style>
 </head>
-<body class="min-h-screen flex items-center justify-center bg-[#e0e5ec] font-sans">
-    <div class="w-full max-w-md mx-4">
-        <div class="neu-card rounded-3xl p-8">
-            <!-- 头部 -->
-            <div class="text-center mb-8">
-                <div class="w-20 h-20 neu-card rounded-full flex items-center justify-center mx-auto mb-4">
-                    <i class="fa fa-user-circle text-4xl text-gray-600"></i>
-                </div>
-                <h1 class="text-2xl font-bold text-gray-700 mb-2">欢迎回来</h1>
-                <p class="text-gray-500">请登录您的账户</p>
-            </div>
-            
-            <!-- 表单 -->
-            <form class="space-y-6">
-                <div class="relative">
-                    <input type="email" id="email" class="w-full px-5 py-4 rounded-xl neu-input text-gray-700 placeholder-transparent focus:outline-none" placeholder="邮箱地址" required>
-                    <label for="email" class="absolute left-5 top-4 text-gray-500 transition-all duration-300 pointer-events-none">邮箱地址</label>
-                </div>
-                
-                <div class="relative">
-                    <input type="password" id="password" class="w-full px-5 py-4 rounded-xl neu-input text-gray-700 placeholder-transparent focus:outline-none" placeholder="密码" required>
-                    <label for="password" class="absolute left-5 top-4 text-gray-500 transition-all duration-300 pointer-events-none">密码</label>
-                    <button type="button" class="absolute right-5 top-4 text-gray-500 hover:text-gray-700 transition-colors">
-                        <i class="fa fa-eye-slash"></i>
-                    </button>
-                </div>
-                
-                <div class="flex items-center justify-between">
-                    <label class="flex items-center text-gray-600 text-sm">
-                        <input type="checkbox" class="mr-2 rounded border-gray-300 bg-[#e0e5ec] text-indigo-500 focus:ring-indigo-500">
-                        记住我
-                    </label>
-                    <a href="#" class="text-gray-600 text-sm hover:text-indigo-500 transition-colors">忘记密码？</a>
-                </div>
-                
-                <button type="submit" class="w-full py-4 rounded-xl neu-btn text-gray-700 font-medium hover:text-indigo-500">
-                    登录
-                </button>
-                
-                <!-- 分割线 -->
-                <div class="flex items-center my-6">
-                    <div class="flex-1 h-px bg-gray-300"></div>
-                    <span class="px-4 text-gray-500 text-sm">或者使用</span>
-                    <div class="flex-1 h-px bg-gray-300"></div>
-                </div>
-                
-                <!-- 社交登录 -->
-                <div class="grid grid-cols-3 gap-4">
-                    <button type="button" class="py-3 rounded-xl neu-social text-gray-600 hover:text-red-500">
-                        <i class="fa fa-google"></i>
-                    </button>
-                    <button type="button" class="py-3 rounded-xl neu-social text-gray-600 hover:text-gray-800">
-                        <i class="fa fa-github"></i>
-                    </button>
-                    <button type="button" class="py-3 rounded-xl neu-social text-gray-600 hover:text-green-500">
-                        <i class="fa fa-weixin"></i>
-                    </button>
-                </div>
-            </form>
-            
-            <!-- 底部 -->
-            <div class="text-center mt-8">
-                <p class="text-gray-500 text-sm">还没有账户？ <a href="#" class="text-indigo-500 font-medium">立即注册</a></p>
+<body>
+    <div class="container">
+        <!-- 左侧区域 -->
+        <div class="left-section">
+            <h1>ai口语陪练</h1>
+            <p>口语提升易如反掌</p>
+        </div>
+
+        <!-- 右侧登录表单 -->
+        <div class="right-section">
+            <div class="login-card">
+                <form id="loginForm">
+                    <div class="form-group">
+                        <input 
+                            type="email" 
+                            id="email" 
+                            placeholder="Email address or phone number"
+                            required
+                        >
+                        <div class="error-message" id="emailError">
+                            请在电子邮件地址中包含"@"。"2312"缺少"@"。
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <input 
+                            type="password" 
+                            id="password" 
+                            placeholder="Password"
+                            required
+                        >
+                    </div>
+
+                    <button type="submit" class="login-btn">Login</button>
+                </form>
+
+                <a href="#" class="forgot-password">Forgot password?</a>
+                <div class="divider"></div>
+                <button class="create-account-btn">Create new account</button>
             </div>
         </div>
     </div>
 
     <script>
-        // 浮动标签效果
-        document.querySelectorAll('input').forEach(input => {
-            if (input.value.trim() !== '') {
-                input.nextElementSibling.classList.add('text-xs', '-translate-y-2.5', 'text-indigo-500');
+        // 邮箱验证逻辑
+        const emailInput = document.getElementById('email');
+        const emailError = document.getElementById('emailError');
+
+        emailInput.addEventListener('input', function() {
+            const value = this.value.trim();
+            
+            if (value && !value.includes('@')) {
+                // 显示错误
+                this.classList.add('error');
+                emailError.style.display = 'flex';
+                // 动态更新错误信息中的输入值
+                emailError.textContent = `请在电子邮件地址中包含"@"。"${value}"缺少"@"。`;
+            } else {
+                // 隐藏错误
+                this.classList.remove('error');
+                emailError.style.display = 'none';
             }
-            
-            input.addEventListener('focus', () => {
-                input.nextElementSibling.classList.add('text-xs', '-translate-y-2.5', 'text-indigo-500');
-            });
-            
-            input.addEventListener('blur', () => {
-                if (input.value.trim() === '') {
-                    input.nextElementSibling.classList.remove('text-xs', '-translate-y-2.5', 'text-indigo-500');
-                }
-            });
         });
-        
-        // 密码显示切换
-        document.querySelectorAll('.fa-eye-slash, .fa-eye').forEach(icon => {
-            icon.addEventListener('click', () => {
-                const input = icon.parentElement.previousElementSibling;
-                input.type = input.type === 'password' ? 'text' : 'password';
-                icon.classList.toggle('fa-eye-slash');
-                icon.classList.toggle('fa-eye');
-            });
-        });
-        
-        // 表单提交
-        document.querySelector('form').addEventListener('submit', (e) => {
+
+        // 表单提交阻止默认行为
+        document.getElementById('loginForm').addEventListener('submit', function(e) {
             e.preventDefault();
-            const btn = e.target.querySelector('button[type="submit"]');
-            const originalText = btn.textContent;
-            btn.innerHTML = '<i class="fa fa-spinner fa-spin mr-2"></i> 登录中...';
-            btn.disabled = true;
-            
-            setTimeout(() => {
-                btn.textContent = originalText;
-                btn.disabled = false;
-                alert('登录成功！');
-            }, 1500);
+            alert('登录功能演示，实际项目中请连接后端接口');
         });
     </script>
 </body>

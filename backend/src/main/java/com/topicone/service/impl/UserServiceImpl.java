@@ -3,6 +3,7 @@ package com.topicone.service.impl;
 import com.topicone.dto.LoginRequest;
 import com.topicone.dto.LoginResponse;
 import com.topicone.dto.RegisterRequest;
+import com.topicone.dto.ResetPasswordRequest;
 import com.topicone.entity.Scene;
 import com.topicone.entity.User;
 import com.topicone.entity.UserSetting;
@@ -143,5 +144,22 @@ public class UserServiceImpl implements UserService {
                 .username(user.getUsername())
                 .token(token)
                 .build();
+    }
+
+    @Override
+    @Transactional
+    public void resetPassword(ResetPasswordRequest request) {
+        // 根据邮箱查找用户
+        User user = userMapper.selectByEmail(request.getEmail());
+        if (user == null) {
+            throw new IllegalArgumentException("该邮箱未注册");
+        }
+
+        // 更新密码
+        user.setPasswordHash(passwordEncoder.encode(request.getNewPassword()));
+        user.setUpdateTime(LocalDateTime.now());
+        userMapper.updateById(user);
+
+        log.info("用户重置密码成功: email={}", request.getEmail());
     }
 }
