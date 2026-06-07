@@ -1,6 +1,26 @@
--- TopicOne 场景表建表语句
+-- TopicOne 建表语句
 
-CREATE TABLE IF NOT EXISTS `scenes` (
+-- ============================================
+-- 用户表
+-- ============================================
+CREATE TABLE IF NOT EXISTS `users` (
+    `id`            BIGINT       NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    `username`      VARCHAR(64)  NOT NULL COMMENT '用户名',
+    `email`         VARCHAR(128) DEFAULT NULL COMMENT '邮箱（可选，用于登陆）',
+    `password_hash` VARCHAR(256) NOT NULL COMMENT 'BCrypt 加密密码',
+    `avatar_url`    VARCHAR(512) DEFAULT NULL COMMENT '头像URL',
+    `create_time`   DATETIME     DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `update_time`   DATETIME     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    UNIQUE INDEX `uk_username` (`username`),
+    UNIQUE INDEX `uk_email` (`email`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户表';
+
+-- 初始化测试用户
+INSERT INTO `users` (`username`, `email`, `password_hash`) VALUES
+('demo', 'demo@topicone.com', '$2a$10$N.zmdr9k7uOCQb376NoUnuTJ8iAt6Z5EHsM8lE9lBOsl7iAt6Z5Eh');
+
+-- ============================================
+-- 对话场景表
     `id`          BIGINT       NOT NULL COMMENT '用户ID（主键）',
     `scene_id`    BIGINT       NOT NULL COMMENT '场景ID（雪花算法生成，全局唯一）',
     `scene_name`  VARCHAR(64)  NOT NULL COMMENT '场景名称',

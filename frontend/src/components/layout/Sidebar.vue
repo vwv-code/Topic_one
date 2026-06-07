@@ -161,9 +161,11 @@ function toggleUserMenu() {
 
 function handleLogout() {
   showUserMenu.value = false
-  // 退出登录逻辑：关闭 WebSocket，清空状态，刷新页面
+  localStorage.removeItem('token')
+  localStorage.removeItem('userId')
+  localStorage.removeItem('username')
   console.log('[退出登录] 用户退出')
-  window.location.reload()
+  window.location.href = '/login'
 }
 
 // 点击外部关闭菜单

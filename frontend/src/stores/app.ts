@@ -85,8 +85,8 @@ export const useAppStore = defineStore('app', () => {
   const isFavorited = ref(false)
   const aiStatus = ref<'ready' | 'recording' | 'processing' | 'speaking'>('ready')
 
-  // 当前用户 ID（后续对接登录后替换为真实值）
-  const userId = ref(1)
+  // 当前用户 ID（从 localStorage 读取，登录后写入）
+  const userId = ref(Number(localStorage.getItem('userId')) || 0)
 
   // ========== 实时对话状态 ==========
   
@@ -817,8 +817,7 @@ export const useAppStore = defineStore('app', () => {
     isPlayingTts = false
     ttsNextStartTime = 0
     scheduledSources.clear()
-    // 字幕在语音结束后0.3s消失
-    hideSubtitle(300)
+    // 字幕持续显示，直到下一个字幕替换或用户手动停止
     console.log('[TTS] 播放引擎空闲')
   }
 

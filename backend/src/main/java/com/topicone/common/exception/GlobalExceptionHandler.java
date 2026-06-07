@@ -18,6 +18,12 @@ public class GlobalExceptionHandler {
         return Result.error(e.getCode(), e.getMessage());
     }
 
+    @ExceptionHandler(IllegalArgumentException.class)
+    public Result<?> handleIllegalArgument(IllegalArgumentException e) {
+        log.warn("参数异常：{}", e.getMessage());
+        return Result.error(400, e.getMessage());
+    }
+
     @ExceptionHandler(RuntimeException.class)
     public Result<?> handleRuntimeException(RuntimeException e) {
         log.error("运行时异常", e);
