@@ -4,6 +4,7 @@ import com.topicone.common.result.Result;
 import com.topicone.dto.LoginRequest;
 import com.topicone.dto.LoginResponse;
 import com.topicone.dto.RegisterRequest;
+import com.topicone.dto.ResetPasswordRequest;
 import com.topicone.service.UserService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -32,5 +33,13 @@ public class AuthController {
         log.info("登录请求: username={}", request.getUsername());
         LoginResponse response = userService.login(request);
         return Result.success(response);
+    }
+
+    /** 忘记密码 - 通过邮箱重置 */
+    @PostMapping("/reset-password")
+    public Result<String> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
+        log.info("重置密码请求: email={}", request.getEmail());
+        userService.resetPassword(request);
+        return Result.success("密码重置成功");
     }
 }
