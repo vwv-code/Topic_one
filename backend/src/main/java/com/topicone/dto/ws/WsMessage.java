@@ -59,4 +59,14 @@ public class WsMessage {
     public static WsMessage error(String errorMessage) {
         return new WsMessage("error", errorMessage);
     }
+
+    /** 发音评测结果 */
+    public static WsMessage pronunciationResult(Object result) {
+        return new WsMessage("pronunciation_result", result);
+    }
+
+    /** 发音评测完成（全部句子评测结束） */
+    public static WsMessage pronunciationComplete() {
+        return new WsMessage("pronunciation_complete", null);
+    }
 }

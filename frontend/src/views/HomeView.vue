@@ -14,6 +14,9 @@
 
     <!-- 底部语音输入栏 -->
     <VoiceInput />
+
+    <!-- 发音评测面板（右侧滑出） -->
+    <PronunciationPanel />
   </div>
 </template>
 
@@ -22,6 +25,7 @@ import Sidebar from '@/components/layout/Sidebar.vue'
 import Header from '@/components/layout/Header.vue'
 import ContentArea from '@/components/layout/ContentArea.vue'
 import VoiceInput from '@/components/layout/VoiceInput.vue'
+import PronunciationPanel from '@/components/layout/PronunciationPanel.vue'
 </script>
 
 <style lang="scss" scoped>

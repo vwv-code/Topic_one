@@ -70,6 +70,13 @@ asr:
   enable-punctuation: true
   enable-intermediate-result: true  # 开启中间结果返回
 
+# 讯飞语音评测（流式版）
+xunfei:
+  app-id: ${XUNFEI_APP_ID:}
+  api-key: ${XUNFEI_API_KEY:}
+  api-secret: ${XUNFEI_API_SECRET:}
+  mock: ${XUNFEI_MOCK:false}  # 开发阶段用 mock，生产设为 false
+
 # 阿里云语音合成 TTS
 tts:
   access-key-id: ${ALIYUN_ACCESS_KEY_ID:}

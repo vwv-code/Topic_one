@@ -30,6 +30,18 @@
 
     <div class="header-right">
       <button
+        :class="['subtitle-btn', { active: store.subtitleEnabled }]"
+        @click="store.toggleSubtitle()"
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="1" y="4" width="22" height="16" rx="2"/>
+          <path d="M7 12h4m-2-2v4"/>
+          <line x1="15" y1="11" x2="19" y2="11"/>
+          <line x1="15" y1="15" x2="17" y2="15"/>
+        </svg>
+        字幕
+      </button>
+      <button
         :class="['favorite-btn', { active: store.isFavorited }]"
         @click="store.toggleFavorite()"
       >
@@ -168,6 +180,36 @@ async function handleSaveTitle() {
 .header-right {
   display: flex;
   align-items: center;
+  gap: 8px;
+}
+
+.subtitle-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+
+  &:hover {
+    background: var(--color-bg-hover);
+    color: var(--color-text-primary);
+  }
+
+  &.active {
+    color: var(--color-accent);
+    background: rgba(79, 70, 229, 0.08);
+
+    &:hover {
+      background: rgba(79, 70, 229, 0.14);
+    }
+  }
 }
 
 .favorite-btn {
@@ -191,7 +233,7 @@ async function handleSaveTitle() {
 
   &.active {
     color: #f59e0b;
-    
+
     &:hover {
       background: #fffbeb;
     }
