@@ -3,7 +3,6 @@ com\topicone\service\asr\AsrService$AsrResultListener.class
 com\topicone\entity\Conversation.class
 com\topicone\mapper\SceneMapper.class
 com\topicone\common\exception\GlobalExceptionHandler.class
-com\topicone\websocket\VoiceWebSocketHandler$AsrEventListener.class
 com\topicone\dto\ConversationDTO.class
 com\topicone\service\llm\LlmService$LlmStreamListener.class
 com\topicone\dto\CreateConversationRequest.class
@@ -12,14 +11,12 @@ com\topicone\config\CorsConfig.class
 com\topicone\service\ConversationService.class
 com\topicone\dto\ws\WsMessage.class
 com\topicone\service\impl\SceneServiceImpl.class
-com\topicone\websocket\WebSocketConfig$VoiceHandshakeInterceptor.class
 com\topicone\service\SceneService.class
 com\topicone\service\impl\MessageServiceImpl.class
 com\topicone\service\impl\PromptBuilderServiceImpl.class
 com\topicone\service\tts\TtsService.class
 com\topicone\entity\Scene.class
 com\topicone\entity\Message.class
-com\topicone\websocket\WebSocketConfig.class
 com\topicone\service\ConversationSceneConfigService.class
 com\topicone\controller\SceneController.class
 com\topicone\dto\SaveSettingsRequest.class
@@ -43,9 +40,7 @@ com\topicone\websocket\VoiceWebSocketHandler$1.class
 com\topicone\common\exception\BusinessException.class
 com\topicone\dto\UpdateSceneRequest.class
 com\topicone\service\tts\AliyunTtsService.class
-com\topicone\websocket\VoiceWebSocketHandler.class
 com\topicone\service\impl\ConversationServiceImpl.class
-com\topicone\websocket\VoiceWebSocketHandler$VoiceSession.class
 com\topicone\entity\ConversationSceneConfig.class
 com\topicone\entity\UserSetting.class
 com\topicone\service\UserSettingService.class

@@ -33,6 +33,39 @@ export interface RecordingState {
 
 export type WsConnectionStatus = 'disconnected' | 'connected' | 'recording' | 'processing' | 'speaking'
 
+export interface PronunciationWordDetail {
+  word: string
+  score: number
+  startMs: number
+  endMs: number
+  phonemes: PronunciationPhonemeDetail[]
+}
+
+export interface PronunciationPhonemeDetail {
+  phoneme: string
+  score: number
+  hasError: boolean
+}
+
+export interface PronunciationSentenceDetail {
+  score: number
+  stressScore: number
+  toneScore: number
+  senseScore: number
+}
+
+export interface PronunciationResultItem {
+  refText: string
+  overallScore: number
+  accuracyScore: number
+  fluencyScore: number
+  integrityScore: number
+  speed: number
+  audioDuration: number
+  sentenceDetail: PronunciationSentenceDetail | null
+  wordDetails: PronunciationWordDetail[]
+}
+
 export const useAppStore = defineStore('app', () => {
   // ========== 状态 ==========
   const chatHistories = ref<ChatHistory[]>([])
@@ -71,6 +104,24 @@ export const useAppStore = defineStore('app', () => {
 
   /** AI 完整回复（流式结束后确定） */
   const aiFullResponse = ref('')
+
+  // ========== 字幕状态 ==========
+  /** 是否开启字幕 */
+  const subtitleEnabled = ref(false)
+  /** 字幕是否当前可见（受时间控制） */
+  const subtitleVisible = ref(false)
+  /** 当前字幕文字内容 */
+  const subtitleText = ref('')
+  /** 字幕延迟/消失定时器 */
+  let subtitleTimer: ReturnType<typeof setTimeout> | null = null
+
+  // ========== 发音评测状态 ==========
+  /** 评测结果列表（每句一个） */
+  const pronunciationResults = ref<PronunciationResultItem[]>([])
+  /** 是否正在评测中 */
+  const pronunciationEvaluating = ref(false)
+  /** 评测面板是否展开 */
+  const pronunciationPanelVisible = ref(false)
 
   /** WebSocket 实例 */
   let ws: WebSocket | null = null
@@ -238,6 +289,11 @@ export const useAppStore = defineStore('app', () => {
 
     console.log(`[Voice] 开始语音对话, conversationId=${convId}`)
 
+    // 清除上一次的评测结果
+    pronunciationResults.value = []
+    pronunciationEvaluating.value = true
+    pronunciationPanelVisible.value = false
+
     try {
       // 1. 建立 WebSocket 连接
       const wsUrl = `ws://localhost:8080/voice?conversationId=${convId}`
@@ -302,6 +358,8 @@ export const useAppStore = defineStore('app', () => {
     stopPcmRecording()
     stopRecording()
     wsStatus.value = 'processing' as WsConnectionStatus
+    // 停止时立即隐藏字幕
+    hideSubtitle()
   }
 
   /**
@@ -319,6 +377,12 @@ export const useAppStore = defineStore('app', () => {
     aiStatus.value = 'ready'
     recognitionText.value = ''
     aiStreamingText.value = ''
+    // 清除字幕状态
+    hideSubtitle()
+    // 清除发音评测状态
+    pronunciationResults.value = []
+    pronunciationEvaluating.value = false
+    pronunciationPanelVisible.value = false
   }
 
   /**
@@ -362,7 +426,7 @@ export const useAppStore = defineStore('app', () => {
         break
 
       case 'ai_response_complete':
-        // AI 回复完成 → 添加到消息列表
+        // AI 回复完成 → 添加到消息列表 + 显示字幕（语音播放前）
         {
           const fullText = msg.data as string
           aiFullResponse.value = fullText
@@ -373,6 +437,11 @@ export const useAppStore = defineStore('app', () => {
             timestamp: new Date()
           })
           aiStreamingText.value = ''
+          // 字幕文字就绪，开启字幕且状态活跃时才显示（防止停止后残留消息触发）
+          subtitleText.value = fullText
+          if (subtitleEnabled.value && aiStatus.value !== 'ready') {
+            subtitleVisible.value = true
+          }
         }
         break
 
@@ -389,6 +458,18 @@ export const useAppStore = defineStore('app', () => {
 
       case 'error':
         console.error('服务端错误:', msg.data)
+        break
+
+      case 'pronunciation_result':
+        // 收到一条发音评测结果
+        pronunciationResults.value.push(msg.data as PronunciationResultItem)
+        break
+
+      case 'pronunciation_complete':
+        // 全部评测完成
+        pronunciationEvaluating.value = false
+        pronunciationPanelVisible.value = true
+        console.log('[Voice] 发音评测完成, 共', pronunciationResults.value.length, '条结果')
         break
 
       default:
@@ -736,6 +817,8 @@ export const useAppStore = defineStore('app', () => {
     isPlayingTts = false
     ttsNextStartTime = 0
     scheduledSources.clear()
+    // 字幕在语音结束后0.3s消失
+    hideSubtitle(300)
     console.log('[TTS] 播放引擎空闲')
   }
 
@@ -749,6 +832,8 @@ export const useAppStore = defineStore('app', () => {
     scheduledSources.clear()
     isPlayingTts = false
     ttsNextStartTime = 0
+    // 强制停止时立即隐藏字幕
+    hideSubtitle()
     if (ttsAudioContext && ttsAudioContext.state !== 'closed') {
       ttsAudioContext.close().catch(() => {})
       ttsAudioContext = null
@@ -780,6 +865,54 @@ export const useAppStore = defineStore('app', () => {
     isFavorited.value = !isFavorited.value
   }
 
+  function toggleSubtitle() {
+    subtitleEnabled.value = !subtitleEnabled.value
+    if (subtitleEnabled.value) {
+      // 开启时：如果状态活跃且有字幕文字，立即显示
+      if (aiStatus.value !== 'ready' && subtitleText.value) {
+        subtitleVisible.value = true
+      }
+    } else {
+      // 关闭时立即隐藏
+      hideSubtitle()
+    }
+  }
+
+  /** 显示字幕（语音播放前0.3s调用） */
+  function showSubtitle(text: string, delayMs: number = 0) {
+    if (!subtitleEnabled.value) return
+    clearSubtitleTimer()
+    subtitleText.value = text
+    if (delayMs > 0) {
+      subtitleTimer = setTimeout(() => {
+        subtitleVisible.value = true
+      }, delayMs)
+    } else {
+      subtitleVisible.value = true
+    }
+  }
+
+  /** 隐藏字幕（语音结束后0.3s调用） */
+  function hideSubtitle(delayMs: number = 0) {
+    clearSubtitleTimer()
+    if (delayMs > 0) {
+      subtitleTimer = setTimeout(() => {
+        subtitleVisible.value = false
+        subtitleText.value = ''
+      }, delayMs)
+    } else {
+      subtitleVisible.value = false
+      subtitleText.value = ''
+    }
+  }
+
+  function clearSubtitleTimer() {
+    if (subtitleTimer) {
+      clearTimeout(subtitleTimer)
+      subtitleTimer = null
+    }
+  }
+
   return {
     chatHistories,
     conversationsLoaded,
@@ -797,6 +930,14 @@ export const useAppStore = defineStore('app', () => {
     recognitionText,
     aiStreamingText,
     aiFullResponse,
+    // 字幕状态
+    subtitleEnabled,
+    subtitleVisible,
+    subtitleText,
+    // 发音评测状态
+    pronunciationResults,
+    pronunciationEvaluating,
+    pronunciationPanelVisible,
     // 场景和会话
     fetchScenes,
     fetchConversations,
@@ -805,6 +946,7 @@ export const useAppStore = defineStore('app', () => {
     updateChatTitle,
     deleteChat,
     toggleFavorite,
+    toggleSubtitle,
     // 录音（兼容旧调用）
     toggleRecording,
     startRecording,

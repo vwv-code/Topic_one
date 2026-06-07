@@ -1,6 +1,7 @@
 package com.topicone.websocket;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.topicone.dto.pronunciation.PronunciationResult;
 import com.topicone.dto.ws.WsMessage;
 import com.topicone.entity.Message;
 import com.topicone.service.MessageService;
@@ -8,6 +9,7 @@ import com.topicone.service.PromptBuilderService;
 import com.topicone.service.asr.AsrService;
 import com.topicone.service.llm.LlmService;
 import com.topicone.service.tts.TtsService;
+import com.topicone.service.pronunciation.PronunciationService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -58,6 +60,9 @@ public class VoiceWebSocketHandler implements WebSocketHandler {
 
     @Autowired
     private PromptBuilderService promptBuilderService;
+
+    @Autowired
+    private PronunciationService pronunciationService;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -124,6 +129,9 @@ public class VoiceWebSocketHandler implements WebSocketHandler {
         byte[] pcmData = new byte[buffer.remaining()];
         buffer.get(pcmData);
 
+        // 缓冲用户音频（用于后续发音评测）
+        voiceSession.appendAudioData(pcmData);
+
         asrService.sendAudio(voiceSession.getAsrSessionId(), pcmData);
     }
 
@@ -176,7 +184,7 @@ public class VoiceWebSocketHandler implements WebSocketHandler {
     }
 
     /**
-     * 停止对话：结束所有服务，清理资源
+     * 停止对话：结束所有服务，触发发音评测，清理资源
      */
     private void handleStopCommand(WebSocketSession session) throws IOException {
         VoiceSession voiceSession = sessions.get(session.getId());
@@ -184,6 +192,25 @@ public class VoiceWebSocketHandler implements WebSocketHandler {
             voiceSession.setState(SessionState.IDLE);
             if (voiceSession.getAsrSessionId() != null) {
                 asrService.stopSession(voiceSession.getAsrSessionId());
+            }
+
+            // ★ 触发发音评测：使用对话中收集的全部用户语音
+            List<PronunciationService.UserUtterance> utterances = voiceSession.getUtterances();
+            if (!utterances.isEmpty()) {
+                log.info("[语音] 开始发音评测, 共{}句", utterances.size());
+                pronunciationService.evaluateBatch(utterances,
+                        results -> {
+                            // 逐条发送评测结果
+                            for (PronunciationResult r : results) {
+                                safeSendJson(session, WsMessage.pronunciationResult(r));
+                            }
+                            safeSendJson(session, WsMessage.pronunciationComplete());
+                            log.info("[语音] 发音评测完成, 共{}条结果", results.size());
+                        },
+                        error -> {
+                            log.error("[语音] 发音评测失败: {}", error);
+                            safeSendJson(session, WsMessage.error("发音评测失败: " + error));
+                        });
             }
         }
         cleanupSession(session.getId());
@@ -202,10 +229,17 @@ public class VoiceWebSocketHandler implements WebSocketHandler {
     private void onUserSentenceDetected(WebSocketSession session, VoiceSession voiceSession,
                                          String userText) {
         if (userText == null || userText.isBlank()) {
+            // 空句子：丢弃已缓存的音频
+            voiceSession.clearCurrentAudio();
             return;
         }
 
         log.info("[语音] 用户说完: '{}', 进入 LLM 处理", userText.trim());
+
+        // ★ 保存当前句子的音频数据（用于发音评测）
+        byte[] sentenceAudio = voiceSession.flushCurrentAudio();
+        // 记录语音句子（音频+文本），供停止时批量评测
+        voiceSession.addUtterance(new PronunciationService.UserUtterance(sentenceAudio, userText));
 
         // 1. 切换状态为 PROCESSING，通知前端
         voiceSession.setState(SessionState.PROCESSING);
@@ -360,10 +394,48 @@ public class VoiceWebSocketHandler implements WebSocketHandler {
         private final Long conversationId;
         private String asrSessionId;
         private SessionState state = SessionState.IDLE;
+        /** 当前句子的音频缓冲（RECORDING 期间持续追加） */
+        private final List<byte[]> currentAudioChunks = new ArrayList<>();
+        /** 对话中收集的全部用户语音句子（音频+文本），停止时用于发音评测 */
+        private final List<PronunciationService.UserUtterance> utterances = new ArrayList<>();
 
         public VoiceSession(String webSocketSessionId, Long conversationId) {
             this.webSocketSessionId = webSocketSessionId;
             this.conversationId = conversationId;
+        }
+
+        /** 追加音频数据（用户录音期间持续调用） */
+        void appendAudioData(byte[] pcmData) {
+            currentAudioChunks.add(pcmData);
+        }
+
+        /** 取出并清空当前句子的全部音频缓冲，合并为单段 PCM */
+        byte[] flushCurrentAudio() {
+            if (currentAudioChunks.isEmpty()) return new byte[0];
+            int totalLen = currentAudioChunks.stream().mapToInt(b -> b.length).sum();
+            byte[] merged = new byte[totalLen];
+            int pos = 0;
+            for (byte[] chunk : currentAudioChunks) {
+                System.arraycopy(chunk, 0, merged, pos, chunk.length);
+                pos += chunk.length;
+            }
+            currentAudioChunks.clear();
+            return merged;
+        }
+
+        /** 清空当前句子音频缓冲 */
+        void clearCurrentAudio() {
+            currentAudioChunks.clear();
+        }
+
+        /** 添加一个用户语音句子 */
+        void addUtterance(PronunciationService.UserUtterance utterance) {
+            utterances.add(utterance);
+        }
+
+        /** 获取全部用户语音句子 */
+        List<PronunciationService.UserUtterance> getUtterances() {
+            return new ArrayList<>(utterances);
         }
     }
 
