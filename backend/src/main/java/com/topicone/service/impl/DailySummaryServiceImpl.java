@@ -3,9 +3,12 @@ package com.topicone.service.impl;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.topicone.dto.DailySummaryResponse;
+import com.topicone.dto.GrowthRecordResponse;
 import com.topicone.entity.DailySummary;
+import com.topicone.entity.ExpressionCorrection;
 import com.topicone.entity.PronunciationEvaluation;
 import com.topicone.mapper.DailySummaryMapper;
+import com.topicone.mapper.ExpressionCorrectionMapper;
 import com.topicone.mapper.PronunciationEvaluationMapper;
 import com.topicone.service.DailySummaryService;
 import com.topicone.service.llm.LlmService;
@@ -27,6 +30,7 @@ import java.util.stream.Collectors;
 public class DailySummaryServiceImpl implements DailySummaryService {
 
     private final PronunciationEvaluationMapper pronunciationEvaluationMapper;
+    private final ExpressionCorrectionMapper expressionCorrectionMapper;
     private final DailySummaryMapper dailySummaryMapper;
     private final LlmService llmService;
     private final ObjectMapper objectMapper;
@@ -39,6 +43,10 @@ public class DailySummaryServiceImpl implements DailySummaryService {
 
         // 1. 查询当天的评测记录
         List<PronunciationEvaluation> evaluations = pronunciationEvaluationMapper
+                .selectTodayByUserId(userId, startOfDay, endOfDay);
+
+        // 1b. 查询当天的表达纠错记录
+        List<ExpressionCorrection> corrections = expressionCorrectionMapper
                 .selectTodayByUserId(userId, startOfDay, endOfDay);
 
         // 2. 查询当天是否已有总结
@@ -65,9 +73,11 @@ public class DailySummaryServiceImpl implements DailySummaryService {
                         .build())
                 .collect(Collectors.toList());
 
-        // 5. 如果已有当天总结，直接返回缓存结果
+        // 5. 如果已有当天总结，更新数值后返回缓存结果
         if (existingSummary != null && existingSummary.getSummaryContent() != null) {
             log.info("[每日总结] 返回缓存: userId={}, date={}", userId, today);
+            // 更新统计数据到数据库（用户可能在同一天多次练习）
+            updateSummaryStats(existingSummary, count, avgOverall, avgAccuracy, avgFluency, avgIntegrity);
             return DailySummaryResponse.builder()
                     .summaryDate(today.toString())
                     .evalCount(count)
@@ -77,6 +87,7 @@ public class DailySummaryServiceImpl implements DailySummaryService {
                     .avgIntegrityScore(round(avgIntegrity))
                     .summaryContent(existingSummary.getSummaryContent())
                     .details(details)
+                    .correctionDetails(buildCorrectionDetails(corrections))
                     .build();
         }
 
@@ -91,11 +102,13 @@ public class DailySummaryServiceImpl implements DailySummaryService {
                     .avgIntegrityScore(0.0)
                     .summaryContent("今天还没有口语练习记录，快去练一练吧！")
                     .details(Collections.emptyList())
+                    .correctionDetails(Collections.emptyList())
                     .build();
         }
 
         // 7. 构建 LLM 提示词，生成总结
-        String summaryContent = generateSummaryWithLlm(userId, evaluations, avgOverall, avgAccuracy, avgFluency, avgIntegrity);
+        String summaryContent = generateSummaryWithLlm(userId, evaluations, corrections,
+                avgOverall, avgAccuracy, avgFluency, avgIntegrity);
 
         // 8. 存储到数据库
         DailySummary ds = new DailySummary();
@@ -118,6 +131,7 @@ public class DailySummaryServiceImpl implements DailySummaryService {
                 .avgIntegrityScore(round(avgIntegrity))
                 .summaryContent(summaryContent)
                 .details(details)
+                .correctionDetails(buildCorrectionDetails(corrections))
                 .build();
     }
 
@@ -125,6 +139,7 @@ public class DailySummaryServiceImpl implements DailySummaryService {
      * 调用 LLM 生成每日口语总结评语
      */
     private String generateSummaryWithLlm(Long userId, List<PronunciationEvaluation> evaluations,
+                                           List<ExpressionCorrection> corrections,
                                            double avgOverall, double avgAccuracy,
                                            double avgFluency, double avgIntegrity) {
         // 构建评分数据文本
@@ -143,6 +158,21 @@ public class DailySummaryServiceImpl implements DailySummaryService {
                     .append(" | 准确度: ").append(e.getAccuracyScore())
                     .append(" | 流利度: ").append(e.getFluencyScore())
                     .append(" | 完整度: ").append(e.getIntegrityScore()).append("\n");
+        }
+
+        // 附加表达纠错数据
+        if (!corrections.isEmpty()) {
+            scoreData.append("\n【表达纠错】\n");
+            for (int i = 0; i < corrections.size(); i++) {
+                ExpressionCorrection c = corrections.get(i);
+                scoreData.append("第").append(i + 1).append("句: \"").append(c.getOriginalText()).append("\"\n");
+                if (c.getCorrectedText() != null && !c.getCorrectedText().equals(c.getOriginalText())) {
+                    scoreData.append("  → 纠正: \"").append(c.getCorrectedText()).append("\"\n");
+                }
+                if (c.getSuggestion() != null && !c.getSuggestion().isBlank()) {
+                    scoreData.append("  建议: ").append(c.getSuggestion()).append("\n");
+                }
+            }
         }
 
         String systemPrompt = "你是一位专业的英语口语评测老师，你的任务是根据用户今天的口语练习数据生成一段总结评语。\n\n"
@@ -231,5 +261,62 @@ public class DailySummaryServiceImpl implements DailySummaryService {
 
     private double round(double val) {
         return Math.round(val * 10.0) / 10.0;
+    }
+
+    /**
+     * 构建纠错详情列表
+     */
+    private List<DailySummaryResponse.CorrectionDetail> buildCorrectionDetails(List<ExpressionCorrection> corrections) {
+        return corrections.stream()
+                .map(c -> DailySummaryResponse.CorrectionDetail.builder()
+                        .originalText(c.getOriginalText())
+                        .correctedText(c.getCorrectedText())
+                        .suggestion(c.getSuggestion())
+                        .build())
+                .collect(Collectors.toList());
+    }
+
+    // ========== 成长记录 ==========
+
+    @Override
+    public GrowthRecordResponse getGrowthRecord(Long userId) {
+        List<DailySummary> allSummaries = dailySummaryMapper.selectAllByUserId(userId);
+
+        int totalSentences = allSummaries.stream().mapToInt(s -> nvlInt(s.getEvalCount())).sum();
+
+        List<GrowthRecordResponse.DataPoint> dataPoints = allSummaries.stream()
+                .map(s -> GrowthRecordResponse.DataPoint.builder()
+                        .date(s.getSummaryDate().toString())
+                        .evalCount(s.getEvalCount())
+                        .avgOverallScore(s.getAvgOverallScore())
+                        .avgAccuracyScore(s.getAvgAccuracyScore())
+                        .avgFluencyScore(s.getAvgFluencyScore())
+                        .avgIntegrityScore(s.getAvgIntegrityScore())
+                        .build())
+                .collect(Collectors.toList());
+
+        return GrowthRecordResponse.builder()
+                .totalDays(allSummaries.size())
+                .totalSentences(totalSentences)
+                .dataPoints(dataPoints)
+                .build();
+    }
+
+    private int nvlInt(Integer val) {
+        return val == null ? 0 : val;
+    }
+
+    /**
+     * 更新已有 daily_summary 行的数值统计（同一天多次练习时刷到最新）
+     */
+    private void updateSummaryStats(DailySummary existing, int count,
+                                     double avgOverall, double avgAccuracy,
+                                     double avgFluency, double avgIntegrity) {
+        existing.setEvalCount(count);
+        existing.setAvgOverallScore(round(avgOverall));
+        existing.setAvgAccuracyScore(round(avgAccuracy));
+        existing.setAvgFluencyScore(round(avgFluency));
+        existing.setAvgIntegrityScore(round(avgIntegrity));
+        dailySummaryMapper.updateById(existing);
     }
 }

@@ -8,7 +8,7 @@
 
 **项目名称**：TopicOne（AI 英语口语陪练）
 **工作目录**：`d:\workspace\Topic_one`
-**当前阶段**：核心对话功能（ASR → LLM → TTS 全自动循环）已完成，进入完善和优化阶段
+**当前阶段**：核心功能全部完成，包括登录注册、每日总结、沉浸式体验（文生图 + 全屏）、发音评测、表达纠错
 
 ---
 
@@ -16,14 +16,14 @@
 
 ### 前端
 - **框架**：Vue 3 + TypeScript + Vite
-- **UI 方案**：手写 SCSS（极简白 + 低饱和点缀色，参考 Claude/GPT-4o 风格）
+- **UI 方案**：手写 SCSS（CSS 变量体系）
 - **状态管理**：Pinia（Composition API 风格）
-- **路由**：Vue Router
-- **HTTP 客户端**：Axios
-- **音频录制**：MediaRecorder API + AudioWorklet 重采样（16kHz / 16bit / mono PCM）
-- **音频播放**：Web Audio API（手动构造 AudioBuffer + AudioContext 时间线调度）
+- **路由**：Vue Router（含 Auth Guard）
+- **HTTP 客户端**：Axios（请求拦截自动带 JWT，响应拦截 401 跳转登录页）
+- **音频录制**：Web Audio API（PCM 16kHz/16bit/mono → WebSocket 二进制帧）
+- **音频播放**：Web Audio API（AudioContext 时间线调度 + GainNode 音量控制）
 - **实时通信**：WebSocket
-- **CSS 变量体系**：定义在 `global.scss`
+- **浏览器 API**：Fullscreen API（requestFullscreen / exitFullscreen）
 
 ### 后端
 - **框架**：Spring Boot 3 + Java 17
@@ -31,12 +31,15 @@
 - **数据库**：MySQL 8.0（数据库名：`topic_one`，端口 3306）
 - **缓存**：Redis（端口 6379）
 - **对象存储**：MinIO（端口 9000，预留）
+- **认证**：JWT（jjwt 0.12.6，HMAC-SHA256）+ BCrypt 密码加密
 - **实时通信**：WebSocket（org.springframework.web.socket）
-- **AI 服务（国内服务组合）**：
-  - **ASR**：阿里云 NLS（Paraformer 实时语音识别，CreateToken 鉴权）
-  - **LLM**：通义千问（DashScope SDK 流式调用，qwen-turbo 模型）
+- **AI 服务**：
+  - **ASR**：阿里云 NLS（Paraformer 实时语音识别）
+  - **LLM**：通义千问（DashScope SDK 流式调用，qwen-turbo）
   - **TTS**：阿里云语音合成（SpeechSynthesizer 免费版）
-  - **发音评测**：讯飞语音评测（流式版 ISE API，WSS 连接 + HMAC-SHA256 鉴权 + XML 结果解析）
+  - **发音评测**：讯飞语音评测（流式版 ISE，WSS + HMAC-SHA256）
+  - **文生图**：通义千问图像生成（qwen-image-plus，通过 DashScope HTTP API 调用）
+- **HTTP 客户端**：OkHttp 4.12（用于调用文生图 API）
 
 ---
 
@@ -44,73 +47,92 @@
 
 ```
 d:\workspace\Topic_one/
-├── backend/                          # Spring Boot 后端
+├── backend/
 │   ├── src/main/java/com/topicone/
-│   │   ├── TopicOneApplication.java  # 启动类
-│   │   ├── common/                   # 公共组件
+│   │   ├── TopicOneApplication.java
+│   │   ├── common/
 │   │   │   ├── exception/            # BusinessException + GlobalExceptionHandler
-│   │   │   └── result/               # Result<T> 统一返回结构 (code=200 成功)
+│   │   │   └── result/               # Result<T> 统一返回结构
 │   │   ├── config/                   # 配置类
-│   │   │   ├── CorsConfig.java       # 跨域配置
-│   │   │   └── MinIOConfig.java      # MinIO 配置（预留）
-│   │   ├── controller/               # REST 控制器层
+│   │   │   ├── CorsConfig.java       # 跨域
+│   │   │   ├── MinIOConfig.java      # MinIO（预留）
+│   │   │   ├── JwtUtil.java          # JWT 生成/验证
+│   │   │   ├── AuthInterceptor.java  # JWT 鉴权拦截器 + ThreadLocal
+│   │   │   ├── WebConfig.java        # 注册拦截器
+│   │   │   └── PasswordConfig.java   # BCryptPasswordEncoder Bean
+│   │   ├── controller/
+│   │   │   ├── AuthController.java          # 注册 / 登录 / 重置密码
 │   │   │   ├── ConversationController.java  # 会话 CRUD
 │   │   │   ├── SceneController.java         # 场景 CRUD
-│   │   │   └── SettingsController.java      # 用户设置
-│   │   ├── dto/                      # 数据传输对象
-│   │   │   ├── ws/WsMessage.java     # WebSocket 消息封装（含发音评测消息类型）
-│   │   │   ├── pronunciation/PronunciationResult.java  # 发音评测结果 DTO（数值评分+单词音素）
-│   │   │   └── ...                   # 其他 DTO
-│   │   ├── entity/                   # 数据库实体类
-│   │   ├── mapper/                   # MyBatis-Plus Mapper 接口
-│   │   ├── service/                  # Service 接口
-│   │   │   ├── asr/                  # ASR 语音识别
-│   │   │   │   ├── AsrService.java           # ASR 接口
-│   │   │   │   └── AliyunAsrService.java     # 阿里云 NLS 实现（CreateToken 鉴权 + 实时转写）
-│   │   │   ├── llm/                  # LLM 大模型
-│   │   │   │   ├── LlmService.java           # LLM 接口
-│   │   │   │   └── QwenLlmService.java       # 通义千问实现（DashScope SDK 流式）
-│   │   │   ├── tts/                  # TTS 语音合成
-│   │   │   │   ├── TtsService.java           # TTS 接口
-│   │   │   │   └── AliyunTtsService.java     # 阿里云实现（SpeechSynthesizer 免费版）
-│   │   │   ├── pronunciation/         # 发音评测
-│   │   │   │   ├── PronunciationService.java        # 发音评测接口（单句 + 批量）
-│   │   │   │   └── XunfeiPronunciationService.java  # 讯飞流式评测实现（WSS 协议）
-│   │   │   ├── PromptBuilderService.java     # 提示词构建接口
-│   │   │   ├── MessageService.java           # 消息存储接口
-│   │   │   └── impl/                 # Service 实现
-│   │   │       ├── PromptBuilderServiceImpl.java  # 场景名+角色+规则→LLM提示词
-│   │   │       ├── MessageServiceImpl.java        # 消息持久化
-│   │   │       └── ...
-│   │   └── websocket/                # WebSocket 处理
-│   │       ├── WebSocketConfig.java          # WebSocket 端点注册
-│   │       └── VoiceWebSocketHandler.java    # 核心处理器：状态机驱动 ASR→LLM→TTS 自动循环
+│   │   │   ├── SettingsController.java      # 用户设置
+│   │   │   ├── DailySummaryController.java  # 每日总结
+│   │   │   └── BackgroundController.java    # 沉浸式背景图
+│   │   ├── dto/                      # DTO
+│   │   │   ├── LoginRequest.java / LoginResponse.java
+│   │   │   ├── RegisterRequest.java
+│   │   │   ├── ResetPasswordRequest.java
+│   │   │   ├── DailySummaryResponse.java
+│   │   │   ├── BackgroundResponse.java
+│   │   │   ├── ws/WsMessage.java
+│   │   │   ├── pronunciation/PronunciationResult.java
+│   │   │   └── ...
+│   │   ├── entity/
+│   │   │   ├── User.java                    # users 表
+│   │   │   ├── Conversation.java            # user_conversation 表
+│   │   │   ├── ConversationSceneConfig.java # conversation_scene_config 表
+│   │   │   ├── Scene.java                   # scenes 表
+│   │   │   ├── UserSetting.java             # user_settings 表
+│   │   │   ├── Message.java                 # user_message 表
+│   │   │   ├── PronunciationEvaluation.java # pronunciation_evaluation 表
+│   │   │   ├── DailySummary.java            # daily_summary 表
+│   │   │   └── ConversationBackground.java  # conversation_background 表
+│   │   ├── mapper/
+│   │   │   ├── UserMapper.java
+│   │   │   ├── ConversationBackgroundMapper.java
+│   │   │   ├── PronunciationEvaluationMapper.java
+│   │   │   ├── DailySummaryMapper.java
+│   │   │   └── ...
+│   │   ├── service/
+│   │   │   ├── UserService.java + impl/
+│   │   │   ├── BackgroundService.java + impl/
+│   │   │   ├── DailySummaryService.java + impl/
+│   │   │   ├── asr/  llm/  tts/  pronunciation/
+│   │   │   └── impl/  (PromptBuilder / Message / Conversation 等)
+│   │   └── websocket/
+│   │       ├── WebSocketConfig.java
+│   │       └── VoiceWebSocketHandler.java
 │   └── src/main/resources/
-│       ├── application.yml           # 应用配置（密钥通过环境变量注入）
-│       └── db/schema.sql             # 建表语句 + 初始数据
-├── frontend/                         # Vue 3 前端
+│       ├── application.yml
+│       └── db/schema.sql
+├── frontend/
 │   ├── src/
-│   │   ├── api/                      # API 接口封装
-│   │   │   ├── request.ts            # Axios 实例 (baseURL: http://localhost:8080)
-│   │   │   ├── scenes.ts             # 场景相关接口
-│   │   │   └── conversations.ts      # 会话相关接口
-│   │   ├── components/layout/        # 布局组件
-│   │   │   ├── Sidebar.vue           # 左侧边栏
-│   │   │   ├── Header.vue            # 顶部导航栏（含字幕开关）
-│   │   │   ├── ContentArea.vue       # 中间内容区（对话消息+AI虚拟人+字幕显示）
-│   │   │   ├── VoiceInput.vue        # 底部语音输入栏（麦克风按钮，自动循环模式）
-│   │   │   └── PronunciationPanel.vue # 右侧发音评测面板（评分圆环+进度条+逐句详情）
-│   │   ├── stores/app.ts             # Pinia 全局状态管理（WebSocket + 录音 + TTS播放 + 消息管理）
+│   │   ├── api/
+│   │   │   ├── request.ts            # Axios 实例 (baseURL: localhost:8080, timeout 10s)
+│   │   │   ├── auth.ts               # 登录/注册/重置密码
+│   │   │   ├── dailySummary.ts       # 每日总结
+│   │   │   ├── background.ts         # 沉浸式背景图 (timeout 120s)
+│   │   │   ├── scenes.ts / conversations.ts
+│   │   ├── components/layout/
+│   │   │   ├── Sidebar.vue           # 左侧边栏（含每日总结按钮 + 用户菜单）
+│   │   │   ├── Header.vue            # 顶部（场景设置 + 标题编辑 + 字幕开关 + 沉浸体验按钮）
+│   │   │   ├── ContentArea.vue       # 内容区（普通模式 + 沉浸式全屏模式）
+│   │   │   ├── VoiceInput.vue        # 底部麦克风（自动循环模式）
+│   │   │   ├── DailySummaryModal.vue # 每日总结弹窗
+│   │   │   └── PronunciationPanel.vue # 发音评测面板
+│   │   │   └── ExpressionCorrectionPanel.vue # 表达纠错面板
+│   │   ├── stores/app.ts             # Pinia 全局状态
 │   │   ├── views/
-│   │   │   ├── HomeView.vue          # 主页面（四栏布局）
-│   │   │   └── SettingsView.vue      # 设置页面
-│   │   ├── router/index.ts           # 路由配置
-│   │   ├── styles/global.scss        # 全局样式 + CSS 变量
-│   │   ├── App.vue                   # 根组件
-│   │   └── main.ts                   # 入口文件
-│   ├── index.html                    # HTML 入口
-│   ├── package.json                  # 依赖配置
-│   └── vite.config.ts                # Vite 配置
+│   │   │   ├── HomeView.vue          # 主页面
+│   │   │   ├── LoginView.vue         # 登录/注册/忘记密码（天青蓝色调）
+│   │   │   └── SettingsView.vue      # 设置页
+│   │   ├── router/index.ts           # 路由 + Auth Guard
+│   │   ├── styles/global.scss
+│   │   ├── App.vue
+│   │   └── main.ts
+│   ├── index.html / package.json / vite.config.ts
+├── template_log.md                   # 登录界面参考模版
+├── make_image.md                     # 通义文生图 API 文档
+└── PROJECT_CONTEXT.md                # 本文件
 ```
 
 ---
@@ -121,645 +143,329 @@ d:\workspace\Topic_one/
 
 | 表名 | 用途 | 主键 |
 |------|------|------|
-| `scenes` | 对话场景表（预定义 + 自定义，作为场景模板） | 复合主键 `(id, scene_id)` |
-| `conversation_scene_config` | 会话级场景配置表（每个会话独立的描述/角色设定） | `conversation_id`（关联 user_conversation） |
-| `user_settings` | 用户设置表（每个用户一行） | `id`（用户ID） |
-| `user_conversation` | 对话会话表（一次对话 = 一条记录） | `conversation_id`（自增） |
-| `user_message` | 对话消息表（每轮问答 = 一条记录） | `message_id`（自增） |
+| `users` | 用户表（BCrypt 密码哈希） | `id`（自增） |
+| `scenes` | 对话场景表 | 复合主键 `(id, scene_id)` |
+| `conversation_scene_config` | 会话级场景配置 | `conversation_id` |
+| `user_settings` | 用户设置 | `id`（用户ID） |
+| `user_conversation` | 对话会话 | `conversation_id`（自增） |
+| `user_message` | 对话消息 | `message_id`（自增） |
+| `pronunciation_evaluation` | 发音评测结果（每句） | `id`（自增） |
+| `daily_summary` | 每日口语总结（LLM 生成 + 缓存） | `id`（自增） |
+| `conversation_background` | 沉浸式背景图缓存 | `id`（自增） |
+| `expression_correction` | 表达纠错记录（LLM 语法纠错） | `id`（自增） |
 
-**数据关系说明**：
-- `scenes` 表：场景模板池，存储所有场景的默认配置（description、role_setting）
-- `conversation_scene_config` 表：每个会话独立的场景配置，创建会话时从 scenes 拷贝初始值
-- `user_conversation.scene_id`：记录当前会话关联的场景 ID（切换场景时更新此字段）
-- **核心设计思想**：同一场景在不同会话中可以有不同的描述和角色设定
-
-### 4.2 scenes 表（场景表）
+### 4.2 users 表
 
 ```sql
--- 复合主键：(id=用户ID, scene_id=场景ID)
--- @TableId 标注在 id 字段上（用户ID），scene_id 是普通字段
--- 查询/更新时必须用自定义 SQL 按 scene_id 操作，不能用 MyBatis-Plus 的 selectById/updateById
-CREATE TABLE scenes (
-    id              BIGINT       NOT NULL COMMENT '用户ID（主键）',
-    scene_id        BIGINT       NOT NULL COMMENT '场景ID（雪花算法生成）',
-    scene_name      VARCHAR(64)  NOT NULL,
-    description     VARCHAR(512) NOT NULL,
-    role_setting    VARCHAR(512) DEFAULT '',
-    difficulty      TINYINT      DEFAULT 1,     -- 1初级 2中级 3高级
-    vocabulary      TEXT         DEFAULT NULL,  -- JSON数组
-    sentences       TEXT         DEFAULT NULL,  -- JSON数组
-    is_builtin      TINYINT(1)   DEFAULT 0,     -- 0自定义 1内置
-    icon            VARCHAR(32)  DEFAULT '',    -- emoji 或 首字|颜色格式
-    sort_order      INT          DEFAULT 0,
-    deleted         TINYINT(1)   DEFAULT 0,
+CREATE TABLE users (
+    id            BIGINT       NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    username      VARCHAR(64)  NOT NULL UNIQUE,
+    email         VARCHAR(128) DEFAULT NULL,
+    password_hash VARCHAR(256) NOT NULL COMMENT 'BCrypt',
+    avatar_url    VARCHAR(512) DEFAULT NULL,
+    create_time   DATETIME     DEFAULT CURRENT_TIMESTAMP,
+    update_time   DATETIME     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+```
+
+### 4.3 pronunciation_evaluation 表
+
+```sql
+CREATE TABLE pronunciation_evaluation (
+    id                BIGINT       NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    user_id           BIGINT       NOT NULL,
+    conversation_id   BIGINT       NOT NULL,
+    ref_text          VARCHAR(1024) NOT NULL COMMENT '标准文本',
+    overall_score     DECIMAL(5,1) NOT NULL COMMENT '综合评分',
+    accuracy_score    DECIMAL(5,1) NOT NULL COMMENT '发音准确度',
+    fluency_score     DECIMAL(5,1) NOT NULL COMMENT '流利度',
+    integrity_score   DECIMAL(5,1) NOT NULL COMMENT '完整度',
+    word_details      TEXT         DEFAULT NULL COMMENT '逐词评测详情JSON',
+    create_time       DATETIME     DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_user_conv (user_id, conversation_id)
+);
+```
+
+### 4.4 daily_summary 表
+
+```sql
+CREATE TABLE daily_summary (
+    id              BIGINT       NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    user_id         BIGINT       NOT NULL,
+    summary_date    DATE         NOT NULL,
+    eval_count      INT          DEFAULT 0,
+    avg_overall     DECIMAL(5,1) DEFAULT 0,
+    avg_accuracy    DECIMAL(5,1) DEFAULT 0,
+    avg_fluency     DECIMAL(5,1) DEFAULT 0,
+    avg_integrity   DECIMAL(5,1) DEFAULT 0,
+    summary_content TEXT         COMMENT 'LLM生成的总结内容',
     create_time     DATETIME     DEFAULT CURRENT_TIMESTAMP,
     update_time     DATETIME     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    PRIMARY KEY (id, scene_id)
+    INDEX idx_ds_user_date (user_id, summary_date)
 );
 ```
 
-**预置数据**：用户 ID=1 有 6 个内置场景（日常对话、餐厅点餐、商务会议、旅游问路、面试自我介绍、酒店入住），用户可自定义添加场景
-
-### 4.3 user_settings 表（用户设置表）
+### 4.5 conversation_background 表
 
 ```sql
-CREATE TABLE user_settings (
-    id               BIGINT       NOT NULL PRIMARY KEY COMMENT '用户ID',
-    current_scene_id BIGINT       DEFAULT NULL,
-    difficulty       VARCHAR(20)  DEFAULT 'intermediate',  -- beginner/intermediate/advanced
-    speech_speed     DECIMAL(3,1) DEFAULT 1.0,             -- AI语音速度 0.5~2.0
-    create_time      DATETIME     DEFAULT CURRENT_TIMESTAMP,
-    update_time      DATETIME     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+CREATE TABLE conversation_background (
+    id                BIGINT       NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    user_id           BIGINT       NOT NULL,
+    conversation_id   BIGINT       NOT NULL COMMENT '每个会话唯一，查缓存用',
+    scene_description VARCHAR(1024) NOT NULL COMMENT '场景描述（提示词来源）',
+    prompt            VARCHAR(2048) COMMENT '实际发送给文生图模型的提示词',
+    image_url         VARCHAR(1024) NOT NULL COMMENT '生成图片URL（24h有效）',
+    create_time       DATETIME     DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE INDEX uk_conversation (conversation_id),
+    INDEX idx_user (user_id)
 );
 ```
-
-### 4.4 user_conversation 表（会话表）
-
-```sql
-CREATE TABLE user_conversation (
-    conversation_id BIGINT       NOT NULL AUTO_INCREMENT PRIMARY KEY,
-    user_id         BIGINT       NOT NULL,
-    scene_id        BIGINT       NOT NULL,          -- 关联 scenes.scene_id
-    title           VARCHAR(128) DEFAULT '' COMMENT '对话标题（用户创建时填写）',
-    deleted         TINYINT      DEFAULT 0,
-    create_time     DATETIME     DEFAULT CURRENT_TIMESTAMP,
-    update_time     DATETIME     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-);
-```
-
-### 4.4.1 conversation_scene_config 表（会话级场景配置表）
-
-```sql
--- 每个会话独立的场景配置，实现「同一场景不同会话可设不同描述/角色」
-CREATE TABLE conversation_scene_config (
-    conversation_id BIGINT       NOT NULL PRIMARY KEY COMMENT '关联 user_conversation.conversation_id',
-    description     VARCHAR(512) NOT NULL DEFAULT '' COMMENT '该会话下的场景描述',
-    role_setting    VARCHAR(512) NOT NULL DEFAULT '' COMMENT '该会话下的角色设定',
-    create_time     DATETIME     DEFAULT CURRENT_TIMESTAMP,
-    update_time     DATETIME     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-);
-```
-
-**数据流**：
-- 创建新会话 → 从 `scenes` 表拷贝对应场景的 `description` / `role_setting` → 写入本表作为初始值
-- 设置页编辑描述/角色设定 → 更新本表（仅影响当前会话）
-- 无激活会话时在设置页保存 → 更新 `scenes` 表（作为后续新会话的默认模板）
-
-### 4.5 user_message 表（消息表）
-
-```sql
-CREATE TABLE user_message (
-    message_id      BIGINT       NOT NULL AUTO_INCREMENT PRIMARY KEY,
-    conversation_id BIGINT       NOT NULL,
-    role            VARCHAR(20)  NOT NULL COMMENT 'user / assistant',
-    content         TEXT         NOT NULL,
-    deleted         TINYINT      DEFAULT 0,
-    create_time     DATETIME     DEFAULT CURRENT_TIMESTAMP,
-    update_time     DATETIME     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-);
-```
-
-消息表已接入业务代码：每轮对话结束（ASR最终结果 + LLM回复），通过 `MessageServiceImpl` 同时写入 user_message 表。
 
 ---
 
-## 5. 后端 API 接口清单
+## 5. 后端 API 接口清单（全部）
 
 ### 统一返回结构
 
 ```java
-// 所有接口统一返回 Result<T>
-// { code: 200, message: "success", data: T }
-// code=200 表示成功，其他为失败
+Result<T>  { code: 200, message: "success", data: T }
 ```
 
-### 场景模块 (`/api/scenes`)
+### 认证模块 (`/api/auth`) — 无需 token
 
-| 方法 | 路径 | 参数 | 功能 | Controller |
-|------|------|------|------|------------|
-| GET | `/api/scenes` | `?userId=1` | 获取用户全部场景列表 | SceneController |
-| POST | `/api/scenes` | `{ userId, sceneName, description, roleSetting?, difficulty? }` | 创建自定义场景 | SceneController |
-| DELETE | `/api/scenes` | `?sceneId=xxx` | 删除场景（逻辑删除） | SceneController |
-
-### 设置模块 (`/api/settings`)
-
-| 方法 | 路径 | 参数 | 功能 | Controller |
-|------|------|------|------|------------|
-| GET | `/api/settings` | `?userId=1` | 获取用户设置 | SettingsController |
-| POST | `/api/settings` | `{ userId, currentSceneId?, difficulty, speechSpeed, sceneId?, description, roleSetting, conversationId? }` | **保存设置 + 场景配置更新** | SettingsController |
-
-**重要**：保存设置的 POST 接口根据 `conversationId` 分支处理：
-1. **有 conversationId** → 更新 `conversation_scene_config` 表的 description/role_setting（仅影响该会话）
-2. **无 conversationId** → 更新 `scenes` 表的 description 和 role_setting（作为后续新会话的默认模板）
-3. **始终**：更新 `user_settings` 表（当前场景ID、难度、语速）
-
-### 会话模块 (`/api/conversations`)
-
-| 方法 | 路径 | 参数 | 功能 | Controller |
-|------|------|------|------|------------|
-| GET | `/api/conversations` | `?userId=1` | 获取用户会话列表 | ConversationController |
-| POST | `/api/conversations` | `{ userId, sceneId?, title? }` | 创建新会话（自动从 scenes 拷贝默认配置到 conversation_scene_config） | ConversationController |
-| DELETE | `/api/conversations` | `?id=xxx` | 删除会话（逻辑删除） | ConversationController |
-| GET | `/api/conversations/config` | `?conversationId=xxx` | 获取会话的场景配置（scene_id + description + role_setting） | ConversationController |
-| PUT | `/api/conversations/title` | `?conversationId=xxx&title=xxx` | 更新会话标题 | ConversationController |
-
-**创建会话时的 scene_id 兜底逻辑**：
-- 前端传了 sceneId → 直接使用
-- 前端没传（null）→ 从 user_settings.current_scene_id 获取
-- 都没有 → 使用第一个内置场景 ID
-
-### WebSocket 实时通信 (`ws://localhost:8080/ws/voice`)
-
-WebSocket 是全自动语音对话的核心通道，使用 JSON 文本帧 + 二进制 PCM 音频帧。
-
-**客户端→服务端消息格式**（JSON）：
-```json
-{ "type": "start", "conversationId": 1 }
-{ "type": "stop" }
-{ "type": "ping" }
-```
-以及：二进制 PCM 音频数据（16kHz / 16bit / mono）
-
-**服务端→客户端消息格式**（JSON）：
-```json
-// ASR 中间识别结果
-{ "type": "asr_partial", "text": "Hello" }
-// ASR 最终断句结果
-{ "type": "asr_final", "text": "Hello, how are you?" }
-// LLM 流式回复片段
-{ "type": "llm_chunk", "text": "I'm fine, thank you!" }
-// TTS 合成音频（base64 编码 PCM）
-{ "type": "audio_chunk", "data": "base64..." }
-// 发音评测单句结果
-{ "type": "pronunciation_result", "data": { "refText":"...", "overallScore":85.0, "accuracyScore":90.0, "fluencyScore":82.0, "integrityScore":88.0, "wordDetails":[...] } }
-// 发音评测全部完成
-{ "type": "pronunciation_complete", "data": null }
-// 状态通知
-{ "type": "status", "status": "recording|processing|speaking" }
-// 错误
-{ "type": "error", "message": "..." }
-```
-
----
-
-## 6. 核心对话流程（全自动循环）
-
-### 6.1 状态机
-
-```
-用户点击麦克风
-  → RECORDING（录音中，PCM 持续发送给后端→ASR）
-  → ASR 检测到静音断句（max_sentence_silence=1000ms）
-  → PROCESSING（ASR 最终结果 → 构建提示词 → 调用 LLM 流式输出）
-  → SPEAKING（LLM 流式差量 → TTS 合成 → 前端播放）
-  → 播放完毕 → 自动回到 RECORDING
-```
-
-### 6.2 后端处理链路（VoiceWebSocketHandler）
-
-1. **收到 `start`**：创建 ASR 会话（阿里云 NLS SpeechTranscriber），建立双向连接
-2. **收到 PCM 二进制帧** → 转发给 ASR 服务，同时 append 到 `VoiceSession.currentAudioChunks`（用于后续发音评测）
-3. **ASR 返回中间结果** → 发送 `asr_partial` 给前端（实时显示）
-4. **ASR 返回最终断句结果** → 发送 `asr_final` → 触发 LLM 管线：
-   - 合并当前句子全部 PCM 音频（`flushCurrentAudio()`）→ 保存为 `UserUtterance`（供评测用）
-   - 获取会话场景配置（scene_id → scenes.scene_name + conversation_scene_config.description/role_setting）
-   - 构建系统提示词（`PromptBuilderService.buildSystemPrompt(conversationId, userMessage)`）
-   - 调用通义千问流式 API（qwen-turbo，temperature=0.3, maxTokens=150）
-   - LLM 流式差量 → 发送 `llm_chunk` 给前端
-   - LLM 完成后 → 调用 TTS 合成 → 发送 `audio_chunk` 给前端
-5. **TTS 期间收到的 PCM** → 静默丢弃（保护状态一致性）
-6. **本轮完成** → 发送 `status: recording` → 前端恢复录音
-7. **收到 `stop`** → 停止 ASR → 触发发音评测（见 6.6 节）→ 清理资源 → 发 `status: ready`
-
-### 6.3 提示词构建（PromptBuilderServiceImpl）
-
-根据 conversationId 查询：
-1. `user_conversation.scene_id` → `scenes.scene_name`
-2. `conversation_scene_config.role_setting` + `description`
-
-系统提示词结构：
-```
-"当前场景是{场景名}。你的角色设定：{角色设定}。场景描述：{描述}。
-交互规则：
-1. 你必须用英语回答，回复只能包含英文单词和标点符号。
-2. 回复简短，2-3句话即可，控制在80个单词以内。
-3. 使用适合英语学习者的简单句子，词汇简单易懂。
-4. 自然地进行角色扮演对话，主动引导对话继续。"
-```
-
-### 6.4 前端录音（app.ts）
-
-- 使用 MediaRecorder API 录制音频
-- 录音参数：16kHz / 16bit / mono（强制重采样）
-- Float32 → Int16 转换后通过 WebSocket 二进制帧发送
-- 自动循环模式下，收到 `status: recording` 后自动恢复录音
-
-### 6.5 前端 TTS 播放引擎（app.ts）
-
-- **AudioContext 复用**：整个会话只创建一个 AudioContext（16kHz），避免反复创建销毁
-- **时间线调度**：所有分片在同一个 `ctx.currentTime` 时间线上用 `source.start(精确时间戳)` 排布，无缝衔接
-- **批量调度**：每次取 500ms 窗口内的所有分片一次性排好
-- **时间漂移保护**：调度前校准 `ttsNextStartTime = Math.max(ttsNextStartTime, ctx.currentTime)`
-- **主动调度**：`enqueueTtsAudio` 和 `source.onended` 双重触发
-- **Int16→Float32**：手动 `ctx.createBuffer()` + 不对称转换系数（负值/32768.0，正值/32767.0）
-
-### 6.6 发音评测流程（讯飞 ISE）
-
-发音评测在**对话结束（用户点击停止）时触发**，与主对话循环解耦，不阻塞实时交互。
-
-**完整流程**：
-```
-用户点击麦克风（stop 指令）
-  ↓
-后端 stopSession → 停止 ASR → 结束对话循环
-  ↓
-取出对话中积累的全部 UserUtterance 列表（每句 = PCM 音频 + ASR 识别文本）
-  ↓
-调用 pronunciationService.evaluateBatch(utterances)
-  ├─→ [第1句] 构建鉴权 URL：HMAC-SHA256 签名 → query string 带 authorization/date/host
-  │    ↓
-  │   建立 WSS 连接到讯飞服务 (wss://ise-api.xfyun.cn/v2/open-ise?...)
-  │    ↓
-  │   发送 ssb 帧：{ common:{app_id}, business:{cmd:"ssb", sub:"ise", ent:"en_vip",
-  │     category:"read_sentence", text:"\uFEFF"+refText, extra_ability:"multi_dimension"}, data:{status:0} }
-  │    ↓
-  │   逐帧发送 base64 音频数据：{ business:{cmd:"auw",aus:1/2/4}, data:{status:1/2, data:"base64..."} }
-  │    每帧 ≤1280B（≈40ms PCM）
-  │    ↓
-  │   接收讯飞 JSON 响应 → 解析 data.data（base64-encoded XML）
-  │    ↓
-  │   提取数值评分：overall(总分) / accuracy(准确度) / fluency(流利度) / integrity(完整度) + 逐词音素
-  │    ↓
-  │   后端 WS 推送 pronunciation_result 消息给前端（逐句直播）
-  │
-  ├─→ [第N句] 同上 ...
-  │
-  └─→ 全部句子完成 → 后端推送 pronunciation_complete → 发送 status:"ready"
-       ↓
-       前端弹出 PronunciationPanel（右侧滑出面板）
-       展示：综合评分圆环 + 准确度/流利度/完整度进度条 + 逐句可展开（单词得分+音素芯片）
-```
-
-**讯飞鉴权（HMAC-SHA256）**：
-1. 生成 RFC1123 格式 GMT 时间戳
-2. 拼接签名原文：`host: ise-api.xfyun.cn\ndate: $date\nGET /v2/open-ise HTTP/1.1`
-3. HMAC-SHA256(apiSecret, signatureOrigin) → base64 → signature
-4. 组装 authorization_origin：`api_key="$apiKey", algorithm="hmac-sha256", headers="host date request-line", signature="$signature"`
-5. base64(authorization_origin) → 拼接到 WS URL 的 query string
-
-**音频缓冲机制**：
-- 用户录音期间，每帧 PCM 均 append 到 `VoiceSession.currentAudioChunks`
-- ASR 检测到断句 → `flushCurrentAudio()` 合并为完整句子 PCM → 保存为 `UserUtterance`
-- 空句子或下一句开始时 → `clearCurrentAudio()` 清空缓冲
-
-**Mock 模式**：
-- `xunfei.mock: true`（默认）→ 跳过真实 API 调用，直接返回随机评分数据
-- 生产环境设 `false` 并配置 `XUNFEI_APP_ID` / `XUNFEI_API_KEY` / `XUNFEI_API_SECRET`
-
-### 6.7 字幕功能
-
-- **字幕开关**：Header 右上角 eye 图标按钮，控制 `subtitleEnabled` 状态
-- **字幕内容**：为 LLM 回复文本（`aiFullResponse`）
-- **显示时机**：`ai_response_complete` 消息到达时显示，TTS 播放结束时隐藏
-- **提示文字替代**：字幕开启后，ContentArea 中的提示文字区域改为显示字幕，对话中始终可见
-
----
-
-## 7. 环境变量配置
-
-所有 API 密钥通过环境变量注入（`application.yml` 使用 `${VAR_NAME:}` 占位符）：
-
-| 环境变量 | 用途 | application.yml 引用位置 |
-|----------|------|--------------------------|
-| `DASHSCOPE_API_KEY` | DashScope（通义千问） | `ai.dashscope.api-key` |
-| `ALIYUN_ACCESS_KEY_ID` | 阿里云 AK ID | `asr.access-key-id`, `tts.access-key-id` |
-| `ALIYUN_ACCESS_KEY_SECRET` | 阿里云 AK Secret | `asr.access-key-secret`, `tts.access-key-secret` |
-| `ALIYUN_NLS_APP_KEY` | 阿里云 NLS 项目 AppKey | `asr.app-key`, `tts.app-key` |
-| `XUNFEI_APP_ID` | 讯飞开放平台 AppID | `xunfei.app-id` |
-| `XUNFEI_API_KEY` | 讯飞 ISE API Key | `xunfei.api-key` |
-| `XUNFEI_API_SECRET` | 讯飞 ISE API Secret | `xunfei.api-secret` |
-
-启动前需在终端设置（或配置系统环境变量后重启 IDE）：
-
-```powershell
-$env:DASHSCOPE_API_KEY="sk-..."
-$env:ALIYUN_ACCESS_KEY_ID="LTAI..."
-$env:ALIYUN_ACCESS_KEY_SECRET="..."
-$env:ALIYUN_NLS_APP_KEY="..."
-$env:XUNFEI_APP_ID="..."
-$env:XUNFEI_API_KEY="..."
-$env:XUNFEI_API_SECRET="..."
-```
-
----
-
-## 8. 后端关键约定
-
-### 8.1 scenes 表复合主键注意事项
-
-```java
-// Scene.java 中 @TableId(type = IdType.INPUT) 标注的是 id（用户ID），不是 sceneId
-// 因此：
-// ❌ 错误：sceneMapper.selectById(sceneId) → 实际执行 WHERE id = sceneId
-// ✅ 正确：sceneMapper.selectBySceneId(sceneId) → 执行 WHERE scene_id = sceneId
-// ✅ 正确：sceneMapper.updateBySceneId(sceneId, desc, roleSetting) → WHERE scene_id = ?
-```
-
-所有对 scenes 表的操作都应使用 SceneMapper 中自定义的 SQL 注解方法：
-- `selectByUserId(Long userId)` — 查某用户全部场景
-- `selectBySceneId(Long sceneId)` — 按 sceneId 查单个
-- `updateBySceneId(Long sceneId, String description, String roleSetting)` — 按 sceneId 更新
-- `deleteBySceneId(Long sceneId)` — 按 sceneId 逻辑删除
-
-### 8.2 conversation_scene_config 表注意事项
-
-```java
-// 本表操作通过 ConversationSceneConfigService 进行
-// 核心方法：
-// - initConfig(conversationId, sceneId): 创建会话时从 scenes 表拷贝默认值
-// - getConfig(conversationId): 读取当前会话的场景配置
-// - updateConfig(conversationId, description, roleSetting): 更新配置（无条件）
-```
-
-### 8.3 user_conversation 表操作约定
-
-```java
-// ConversationMapper 自定义 SQL 方法：
-// - selectByUserId(userId): 查用户全部会话（含 deleted=0 条件）
-// - selectByConversationId(conversationId): 按 ID 查单个
-// - insert(conv): MyBatis-Plus 内置插入（需继承 BaseMapper<Conversation>）
-// - deleteById(conversationId): 逻辑删除（UPDATE SET deleted=1）
-// - updateSceneId(conversationId, sceneId): 切换关联场景（更新 user_conversation.scene_id）
-// - updateTitle(conversationId, title): 更新会话标题
-```
-
-### 8.4 阿里云 NLS ASR 鉴权方式
-
-使用 **两步鉴权**（CreateToken API）：
-1. 用 HMAC-SHA1 签名调用 `nls-meta.cn-shanghai.aliyuncs.com` 获取临时 Token
-2. 用 Token 建立 WebSocket 连接到 `nls-gateway-cn-beijing.aliyuncs.com`
-
-**关键约束**：
-- `message_id` 必须是 32 位纯十六进制（UUID 去掉横杠）
-- POP 签名算法使用 HMAC-SHA1，不是 HMAC-SHA256
-
-### 8.5 阿里云 TTS 注意事项
-
-- 使用免费版 namespace：`SpeechSynthesizer`（不是付费的 `FlowingSpeechSynthesizer`）
-- 免费音色：`xiaoyun`（小云-女）/ `xiaogang`（小刚-男）
-- 文本放在 `StartSynthesis.payload.text` 中，不需要 RunSynthesis/StopSynthesis
-
-### 8.6 DashScope LLM 流式调用注意事项
-
-```java
-// DashScope 流式返回的是累积全文，需要手动做差量
-String accumulatedText = result.getOutput().getChoices().get(0).getMessage().getContent();
-if (accumulatedText.length() > previousLen) {
-    String delta = accumulatedText.substring(previousLen);
-    listener.onChunk(delta);
-}
-```
-
-- 使用 `Generation.call()`（同步非流式）或 `Generation.stream().blockingForEach()`（阻塞流式）
-- 参数约束：`temperature(0.3F)`, `maxTokens(150)`, `seed(42)`, `repetitionPenalty(1.1F)`, `enableSearch(false)`
-- SDK 2.17.0 中 `topP()` 与 `temperature()` 参数类型不一致，已移除 topP 调用
-
-### 8.7 默认用户 ID
-
-前端当前硬编码 `userId = 1`，后端 Controller 的 `@RequestParam` 也默认值为 1。后续对接登录系统时替换。
-
-### 8.8 MyBatis-Plus 使用规范
-
-- 使用 **@Select / @Update / @Delete 注解** 写 SQL，不使用 XML Mapper
-- 逻辑删除全局配置：`logic-delete-value=1`, `logic-not-delete-value=0`
-- 驼峰映射自动开启：`map-underscore-to-camel-case: true`
-- ConversationMapper 继承 `BaseMapper<Conversation>` 以获得内置 `insert()` 方法
-
----
-
-## 9. 前端关键信息
-
-### 9.1 页面路由
-
-| 路由 | 视图 | 说明 |
+| 方法 | 路径 | 功能 |
 |------|------|------|
-| `/` | HomeView.vue | 主页面（四栏布局） |
-| `/settings` | SettingsView.vue | 设置页面 |
+| POST | `/api/auth/register` | 注册（用户名+密码+可选邮箱）→ 自动复制预置场景 + 创建设置 |
+| POST | `/api/auth/login` | 登录（支持用户名或邮箱）→ 返回 JWT token |
+| POST | `/api/auth/reset-password` | 忘记密码（仅需邮箱 + 新密码）→ BCrypt 更新 |
 
-### 9.2 Pinia Store (app.ts)
+### 场景 / 设置 / 会话模块（需要 token）
 
-**核心状态**：
+同原文档，路径含 `/api/scenes`、`/api/settings`、`/api/conversations`
 
-| 状态变量 | 类型 | 说明 |
-|----------|------|------|
-| `chatHistories` | `ChatHistory[]` | 对话历史列表（从后端加载，含 sceneName） |
-| `conversationsLoaded` | `boolean` | 会话列表是否加载完毕 |
-| `scenes` | `SceneItem[]` | 场景列表（从后端加载） |
-| `scenesLoaded` | `boolean` | 场景列表是否加载完毕 |
-| `recordingState` | `RecordingState` | 录音状态 |
-| `currentScene` | `string` | 当前激活会话的场景名称（随会话切换自动更新） |
-| `aiStatus` | `'ready' \| 'recording' \| 'processing' \| 'speaking'` | AI 状态（由 WebSocket status 消息驱动） |
-| `userId` | `number` | 当前用户 ID（默认 1） |
-| `messages` | `ChatMessage[]` | 当前会话的消息列表（切换会话时清空） |
-| `recognitionText` | `string` | ASR 识别文字（中间结果实时更新） |
-| `aiStreamingText` | `string` | LLM 流式输出文字（差量追加） |
-| `aiFullResponse` | `string` | LLM 完整回复 |
-| `subtitleEnabled` | `boolean` | 字幕开关状态 |
-| `subtitleVisible` | `boolean` | 字幕当前是否可见（受时间控制） |
-| `subtitleText` | `string` | 当前字幕文字内容 |
-| `autoLoop` | `boolean` | 是否开启自动循环模式 |
-| `isDirty` | `boolean` | 对话是否有未保存内容 |
-| `pronunciationResults` | `PronunciationResultItem[]` | 发音评测结果列表（每句一个） |
-| `pronunciationEvaluating` | `boolean` | 是否正在评测中 |
-| `pronunciationPanelVisible` | `boolean` | 评测面板是否展开 |
+### 每日总结 (`/api/daily-summary`) — 需要 token
 
-**计算属性**：
+| 方法 | 路径 | 功能 |
+|------|------|------|
+| GET | `/api/daily-summary` | 获取今日口语总结（含 LLM 生成评测反馈，缓存于 daily_summary 表） |
 
-| 属性 | 说明 |
-|------|------|
-| `activeChatId` | 当前激活会话的 id（字符串），用于 Header 标题编辑等 |
+### 沉浸式体验 (`/api/background`) — 需要 token
 
-**WebSocket 相关**：
-- `ws: WebSocket | null` — 当前 WebSocket 连接
-- WebSocket 连接 URL：`ws://localhost:8080/ws/voice`
-- 自动重连：失败后 3 秒重试
+| 方法 | 路径 | 功能 |
+|------|------|------|
+| GET | `/api/background?conversationId=X` | 获取或生成会话背景图。先查 conversation_background 表缓存，没有再调用通义文生图 |
 
-**录音相关**：
-- `mediaRecorder: MediaRecorder | null`
-- `audioContext: AudioContext | null`（用于重采样）
-- PCM 参数：16kHz / 16bit / mono
-- Float32→Int16 转换后以 4096 bytes/chunk 发送
+### WebSocket (`ws://localhost:8080/ws/voice`)
 
-**TTS 播放引擎**（模块级闭包变量，非 store 状态）：
-- `ttsAudioContext: AudioContext | null` — 整个会话复用的播放 AudioContext
-- `ttsNextStartTime: number` — 时间线调度游标
-- `scheduledSources: Set<AudioBufferSourceNode>` — 已调度 source 追踪
-- `ttsAudioQueue: ArrayBuffer[]` — 待播放队列
-- `isPlayingTts: boolean` — 播放中标记
-
-**ChatMessage 类型**：
-```typescript
-interface ChatMessage {
-  id: string
-  role: 'user' | 'assistant'
-  content: string
-  timestamp: number
-}
-```
-
-**PronunciationResultItem 类型**：
-```typescript
-interface PronunciationResultItem {
-  refText: string
-  overallScore: number        // 综合得分
-  accuracyScore: number       // 准确度得分
-  fluencyScore: number        // 流利度得分
-  integrityScore: number      // 完整度得分
-  speed: number               // 语速（0=慢,1=正常,2=快）
-  audioDuration: number       // 录音时长（ms）
-  sentenceDetail: { score: number, stressScore: number, toneScore: number, senseScore: number } | null
-  wordDetails: { word: string, score: number, startMs: number, endMs: number,
-                 phonemes: { phoneme: string, score: number, hasError: boolean }[] }[]
-}
-```
-
-**核心方法**：
-
-| 方法 | 说明 |
-|------|------|
-| `fetchScenes()` | 从后端加载场景列表 |
-| `fetchConversations()` | 从后端加载会话历史 |
-| `createNewChat(title?)` | 弹窗输入标题 → 调后端 API 创建 → 自动解析场景名并置顶激活 |
-| `selectChat(id)` | 切换激活的会话，**清空消息面板**，同时 `forceCloseAll()` 关闭旧 WebSocket |
-| `updateChatTitle(conversationId, title)` | 调 PUT 更新标题 |
-| `deleteChat(id)` | 删除会话 |
-| `toggleRecording()` | 开始/停止录音，自动循环模式下建立 WebSocket 连接 |
-| `connectWs(conversationId)` | 建立 WebSocket 连接并发送 start 消息 |
-| `disconnectWs()` | 关闭 WebSocket 连接 |
-| `forceCloseAll()` | 强制关闭 WebSocket + 录音 + TTS 播放 |
-| `enqueueTtsAudio(base64Data)` | TTS 音频入队 |
-| `startTtsPlayback()` | 启动 TTS 播放引擎 |
-| `scheduleNextChunk()` | 批量调度分片到时间线 |
-| `stopTtsPlayback()` | 立即停止 TTS 播放 |
-
-### 9.3 Axios 封装 (request.ts)
-
-```typescript
-const request = axios.create({
-  baseURL: 'http://localhost:8080',  // 后端地址
-  timeout: 10000,
-})
-// 响应拦截器直接返回 response.data
-// 所以 API 函数拿到的就是 { code, message, data }
-```
-
-### 9.4 CSS 变量体系 (global.scss)
-
-设计风格：「极简白 + 低饱和点缀色」（参考 Claude / GPT-4o / Notion AI）
-
-核心变量：
-- `--color-bg-primary`: 主背景（纯白/近白）
-- `--color-accent`: 主色调（深蓝系）
-- `--color-text-primary/secondary/tertiary`: 文字三级灰度
-- `--color-border/border-hover`: 边框色
-
-### 9.5 UI 交互规范
-
-- **新对话创建**：点击「新对话」→ 弹出标题输入弹窗 → 用户填写 → 确认后调 API 创建
-- **Header 标题编辑**：有激活会话时显示可编辑的 input，**失焦或回车自动保存**
-- **场景标签展示**：侧边栏每个对话项显示场景名标签；Header 显示当前场景名
-- **设置页数据加载逻辑**：场景列表始终从 scenes 表读取；当前选中场景 + 描述/角色设定从 conversation_scene_config 按 conversationId 读取
-- **设置页保存逻辑分支**：有 conversationId → 更新 conversation_scene_config；无 → 更新 scenes 表作为模板
-- **麦克风按钮**：点击开始/再点击结束（全自动循环模式，不需要手动停止）
-- **会话切换**：切换时自动关闭旧 WebSocket + 清空消息面板
-- **自定义场景创建**：仅需填写场景名称，描述和角色设定可在创建后在设置页编辑
-- **自定义场景图标**：彩色首字母圆形头像（格式：`首字母|颜色值`）
-- **会话切换状态保持**：进出设置页后恢复之前的激活会话，不会跳回第一条
+消息格式与原文档一致，额外增加扬声器评测消息。
 
 ---
 
-## 10. 已完成功能
+## 6. 核心功能流程
 
-- [x] 前端四栏布局（左侧边栏 + 顶部导航 + 内容区 + 底部语音输入栏）
-- [x] 场景选择模块（预置 6 个内置场景 + 自定义创建 + 编辑描述/角色设定 + 删除）
-- [x] 用户设置保存（场景、难度、语速一体化保存到后端）
-- [x] 对话历史功能（新对话创建 + 历史列表 + 切换保持状态 + 删除 + 标题编辑）
-- [x] 前后端 REST API 对接（场景 CRUD + 设置读写 + 会话 CRUD + 场景配置查询）
-- [x] **会话级场景配置**：`conversation_scene_config` 表，同一场景不同会话可设不同描述/角色
-- [x] **ASR 语音识别**：阿里云 NLS Paraformer 实时转写，CreateToken 两步鉴权
-- [x] **LLM 对话引擎**：通义千问 DashScope SDK 流式调用，温度/Token/重复惩罚参数约束
-- [x] **TTS 语音合成**：阿里云 SpeechSynthesizer 免费版，PCM 输出
-- [x] **前端 PCM 录音**：MediaRecorder + Float32→Int16 转换 + 16kHz 重采样
-- [x] **前端 PCM 播放**：手动 AudioBuffer 构建 + Int16→Float32 + AudioContext 时间线调度
-- [x] **WebSocket 实时通信**：前端⇔后端双向 JSON/二进制帧
-- [x] **全自动循环状态机**：RECORDING → PROCESSING → SPEAKING → RECORDING
-- [x] **提示词构建**：场景名 + 角色设定 + 描述 → LLM 系统提示词（英语口语陪练规则）
-- [x] **消息持久化**：`user_message` 表读写，每轮对话自动存储
-- [x] **TTS 卡壳优化**：AudioContext 复用 + 批量时间线调度 + 时间漂移保护
-- [x] **会话切换状态隔离**：切换会话自动关闭旧连接 + 清空消息面板
-- [x] **密钥安全**：所有 API 密钥通过环境变量注入，application.yml 无硬编码
-- [x] **ASR 断句优化**：`max_sentence_silence=1000ms` 静音断句参数
-- [x] **字幕功能**：Header 开关 + 对话中显示 LLM 回复文字 + TTS 播放前后受控显示/隐藏
-- [x] **讯飞发音评测**：对话停止时自动触发，逐句 WSS 连接评测，支持 Mock 模式
-- [x] **评测面板**：PronunciationPanel 右侧滑出，综合评分圆环 + 三维度进度条 + 逐句可展开单词音素详情
+### 6.1 登录注册流程
+
+```
+登录页面 (LoginView.vue)
+  ├── 天青蓝主色调 (#0ea5e9)
+  ├── 左侧品牌区："AI 口语陪练" + "口语提升易如反掌"
+  └── 右侧表单卡片：
+       ├── 登录模式：用户名或邮箱 + 密码 → JWT token
+       ├── 注册模式：用户名 + 邮箱（选填）+ 密码 → 自动创建场景/设置
+       └── 忘记密码模式：邮箱 + 新密码 + 确认密码 → 重置
+
+注册后自动：
+  1. 插入 users 表
+  2. 从内置用户(id=1)复制 6 个场景（雪花 ID）
+  3. 创建 user_settings 默认设置
+  4. 返回 JWT token → 跳转首页
+
+JWT 鉴权：
+  - AuthInterceptor 拦截 /api/**（排除 /api/auth/**）
+  - Bearer token 验证 → ThreadLocal<currentUserId>
+  - 401 → 前端自动清除 localStorage → 跳转登录页
+```
+
+### 6.2 每日总结流程
+
+```
+Sidebar 头像点击 → 弹出用户菜单 → 点击「每日总结」
+  ↓
+DailySummaryModal 弹出
+  ↓
+GET /api/daily-summary
+  ↓
+后端：
+  1. 查 daily_summary 表（按 userId + 今天日期）→ 命中直接返回
+  2. 未命中：查 pronunciation_evaluation 表（今天全部记录）
+     → 调 LLM（角色"英语口语评测老师"）生成反馈
+     → 写入 daily_summary 表 → 返回
+
+前端显示：圆形评分环（SVG）+ 4 维度网格 + AI 评论 + 逐句进度条
+```
+
+### 6.3 沉浸式体验流程
+
+完整流程如下：
+
+```
+① Header 点击「沉浸体验」→ 确认弹窗
+   "是否开启沉浸式体验？开启后将为当前对话场景生成背景画面"
+   ├── 否：关闭
+   └── 是：store.enableImmersive()
+
+② 获取/生成背景图
+   backgroundLoading = true → ContentArea 显示转圈 spinner
+   ↓
+   GET /api/background?conversationId=X
+   ↓
+   后端：查 conversation_background 表
+   ├── 命中 → 直接返回 imageUrl
+   └── 未命中 → 取 ConversationSceneConfig(scene_description) + Conversation(title)
+              → 拼装英文提示词 → 调通义文生图 (qwen-image-plus)
+              → 保存 image_url 到 conversation_background
+              → 返回给前端
+   ↓
+   backgroundImageUrl = imageUrl → 普通模式显示背景图（半透明白遮罩）
+
+③ 点击麦克风 → 全屏
+   aiStatus: ready → recording
+   isImmersiveFullscreen = immersiveEnabled && aiStatus !== 'ready'
+   ↓
+   watch → document.documentElement.requestFullscreen() (F11 全屏)
+   ContentArea 渲染沉浸式全屏覆盖层 (position:fixed; z-index:9999)
+   Sidebar / Header / VoiceInput 被覆盖隐藏
+
+④ 对话中的全屏交互
+   ┌─────────────────────────────────────────┐
+   │           (全屏背景图)                    │
+   │                                         │
+   │    "AI 字幕文字" ← 始终可见                │
+   │                                         │
+   │    鼠标不动 3s 消失 ↓                     │
+   │   ┌──────────────────────────┐          │
+   │   │ [字幕] [🔊──●──] [■]    │          │
+   │   └──────────────────────────┘ ← 毛玻璃  │
+   └─────────────────────────────────────────┘
+
+   字幕：始终显示，不受鼠标移动影响
+   工具栏：
+     - 字幕开关（CC 图标，激活时紫色高亮）
+     - 音量滑块（0-100，GainNode 控制 TTS 播放音量）
+     - 结束对话（红色方块，调用 stopVoiceSession）
+   鼠标移动 → 工具栏显示，不动 3 秒 → 渐隐
+
+⑤ 结束对话
+   触发方式：点击浮动「结束对话」| 按 Esc | 口述自动评测
+   ↓
+   stopVoiceSession() → 发送 { type: 'stop' }
+   ↓
+   后端：发音评测 + 表达纠错（并行）
+   ├── 发音评测：将全部用户语音句子发给讯飞 ISE
+   │   → pronunciation_result（逐句） → pronunciation_complete
+   └── 表达纠错：将全部 ASR 文本逐句发给 LLM 纠错
+       → expression_correction_result（逐句） → expression_correction_complete
+   ↓
+   两个都完成 → tryFinishAfterEvaluation() → 退出全屏 + 关闭连接
+   沉浸式覆盖层消失 → 发音评测面板 + 表达纠错面板弹出
+
+⑥ 关闭沉浸体验
+   Header 再次点击「沉浸体验」→ disableImmersive()
+```
+
+### 6.4 表达纠错流程
+
+```
+用户点击停止 → 提取 utterances 中全部文本
+  ↓
+逐句调用 LLM（system prompt: 英语语法老师角色）
+  ↓
+LLM 返回 JSON: { "corrected_text": "纠正后句子", "suggestion": "中文纠错说明" }
+  ↓
+逐条 WebSocket 推送 expression_correction_result → 存入 expression_correction 表
+  ↓
+全部完成推送 expression_correction_complete → 前端 ExpressionCorrectionPanel 弹出
+```
+
+### 6.5 字幕行为
+
+- 字幕开启后，AI 说话时显示字幕文字
+- **不会自动消失**，直到下一个字幕出现或用户手动停止麦克风
+- 全屏模式下，字幕始终可见（不受鼠标移动显隐影响）
+- 普通模式下，字幕显示在 AI 虚拟人头像下方
+
+### 6.5 TTS 音量控制
+
+- Store 中 `ttsVolume` (0-100) + `setTtsVolume()` 
+- `startTtsPlayback()` 创建 AudioContext 时同时创建 GainNode
+- GainNode 串入 source → GainNode → destination 链路
+- 音量滑块拖动实时更新 `GainNode.gain.value`
+- 全屏模式下底部工具栏显示音量滑块，普通模式下暂不显示
+
+### 6.6 浏览器全屏同步
+
+- 进入沉浸式全屏 → `document.documentElement.requestFullscreen()`
+- 退出沉浸式全屏 → `document.exitFullscreen()`
+- 用户按 Esc → `fullscreenchange` 事件 → 自动调用 `forceCloseAll()`
 
 ---
 
-## 11. 已知问题 & 待优化
+## 7. 用户注册流程（完整）
 
-1. **中间内容区（ContentArea）**：当前展示 AI 虚拟人形象 + 字幕，对话消息气泡功能待完善
-2. **消息持久化**：已实现基本写入，消息列表加载（从 DB 恢复历史消息）待实现
-3. **登录系统**：当前硬编码 userId=1，需对接登录/注册
-4. **MinIO 音频存储**：已配置但未接入，可用于存储录音存档
-5. **前端构建输出路径**：Vite 构建产物输出到后端 `static/` 目录以便打包部署
-6. **讯飞评测**：当前默认启用 Mock 模式，对接真实 API 需配置 XUNFEI 环境变量并设 `xunfei.mock: false`
+```
+POST /api/auth/register
+  ↓
+UserServiceImpl.register()
+  1. 检查用户名唯一 → 重复抛 IllegalArgumentException
+  2. 检查邮箱唯一（如提供）→ 重复抛异常
+  3. BCrypt 加密密码 → 插入 users 表
+  4. copyBuiltinScenes(userId)：从 userId=1 复制 6 个场景
+     - sceneId 用雪花算法生成（IdUtil.getSnowflakeNextId）
+  5. createDefaultSettings(userId)：插入 user_settings 默认行
+  6. 生成 JWT token（24h 有效）→ 返回
+```
 
 ---
 
-## 12. 历史故障排查录
+## 8. Pinia Store 关键状态（app.ts）
 
-| 问题 | 根因 | 解决方案 |
-|------|------|----------|
-| ASR 403 鉴权失败 | 自己编 HMAC-SHA256 签名，阿里云不认 | 实现 CreateToken API 获取临时 Token（POP 签名 HMAC-SHA1） |
-| message_id 被拒 | UUID 带横杠格式非法 | `.replace("-", "")` 转 32 位纯十六进制 |
-| TTS 报 FREE_TRIAL_EXPIRED | 调用了 FlowingSpeechSynthesizer（商用版） | 改为 SpeechSynthesizer（免费版），文本放 StartSynthesis.payload.text |
-| TTS 音色付费 | 用了 xiaoxiao（晓晓） | 改为免费音色 xiaoyun |
-| 前端 PCM 播放失败 | `decodeAudioData()` 不认裸 PCM | 手动 `ctx.createBuffer()` + Int16→Float32 注入 |
-| LLM 流式显示怪异回放 | DashScope 返回累积全文，前端 += 导致重复 | 后端做差量计算 `accumulatedText.substring(previousLen)` |
-| LLM 回复一大段 | temperature 默认 0.8 太高 | 加 `temperature(0.3)`, `maxTokens(150)`, `seed(42)`, `repetitionPenalty(1.1)` |
-| TTS 播放卡壳+电音 | 每片新建 AudioContext + 无时间衔接 + Int16 转换精度 | AudioContext 复用 + 时间线调度 + 不对称转换系数 |
-| 切换会话显示旧消息 | `selectChat()` 未清空 messages | 切换时 `forceCloseAll()` + 清空所有状态字段 |
-| topP() 方法签名不匹配 | SDK 2.17.0 参数类型不一致 | 删除 topP 调用 |
+### 核心响应式状态
+
+| 变量 | 类型 | 说明 |
+|------|------|------|
+| `userId` | `ref<number>` | 从 localStorage 读取 |
+| `aiStatus` | `ref<'ready'\|'recording'\|'processing'\|'speaking'>` | 驱动全屏/普通切换 |
+| `subtitleEnabled` | `ref<boolean>` | 字幕开关 |
+| `subtitleVisible` | `ref<boolean>` | 字幕是否可见 |
+| `subtitleText` | `ref<string>` | 字幕内容 |
+| `immersiveEnabled` | `ref<boolean>` | 沉浸式体验开关 |
+| `backgroundImageUrl` | `ref<string\|null>` | 背景图 URL |
+| `backgroundLoading` | `ref<boolean>` | 背景图加载中 |
+| `ttsVolume` | `ref<number>` | TTS 音量 0-100 |
+| `pronunciationResults` | `ref<PronunciationResultItem[]>` | 发音评测结果 |
+| `pronunciationPanelVisible` | `ref<boolean>` | 评测面板可见 |
+| `expressionCorrectionResults` | `ref<ExpressionCorrectionResultItem[]>` | 表达纠错结果 |
+| `expressionCorrectionPanelVisible` | `ref<boolean>` | 纠错面板可见 |
+
+### 关键计算属性
+
+```ts
+// 沉浸式全屏：开启沉浸 + 非待机 → 触发全屏
+const isImmersiveFullscreen = computed(() =>
+  immersiveEnabled.value && aiStatus.value !== 'ready'
+)
+```
 
 ---
 
-## 13. 启动方式
+## 9. 配色体系
 
-### 后端
-```bash
-cd backend
-mvn spring-boot:run
-```
-后端默认端口：8080
+### 登录页
+- 主色：`#0ea5e9`（天青蓝）
+- hover：`#0284c7`
+- 绿色注册按钮：`#42b72a` → hover `#36a420`
+- 背景：`#f0f2f5`
 
-### 前端
-```bash
-cd frontend
-npm run dev
-```
-前端默认端口：5173（Vite 开发服务器）
-
-### 环境变量（启动前必须设置）
-```powershell
-$env:DASHSCOPE_API_KEY="sk-..."
-$env:ALIYUN_ACCESS_KEY_ID="LTAI..."
-$env:ALIYUN_ACCESS_KEY_SECRET="..."
-$env:ALIYUN_NLS_APP_KEY="..."
-$env:XUNFEI_APP_ID="..."       # 讯飞评测（Mock 模式下可跳过）
-$env:XUNFEI_API_KEY="..."      # 讯飞评测（Mock 模式下可跳过）
-$env:XUNFEI_API_SECRET="..."   # 讯飞评测（Mock 模式下可跳过）
-```
-
-### 数据库
-MySQL 8.0，数据库名 `topic_one`，端口 3306，用户名 root，密码 123456。建表语句见 `backend/src/main/resources/db/schema.sql`。
-
+### 主应用
+- 使用 CSS 变量体系（`global.scss`）
+- `--color-accent` 等变量控制主色调

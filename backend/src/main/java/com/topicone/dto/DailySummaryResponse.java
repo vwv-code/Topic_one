@@ -37,8 +37,11 @@ public class DailySummaryResponse {
     /** LLM 生成的总结评语 */
     private String summaryContent;
 
-    /** 逐句评测详情（用于前端可视化） */
+    /** 逐句评测详情（发音评测） */
     private List<EvaluationDetail> details;
+
+    /** 逐句纠错详情（表达纠错） */
+    private List<CorrectionDetail> correctionDetails;
 
     @Data
     @Builder
@@ -50,5 +53,18 @@ public class DailySummaryResponse {
         private Double accuracyScore;
         private Double fluencyScore;
         private Double integrityScore;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class CorrectionDetail {
+        /** 用户原始英文句子 */
+        private String originalText;
+        /** LLM 纠错后的句子 */
+        private String correctedText;
+        /** 纠错建议（中文） */
+        private String suggestion;
     }
 }

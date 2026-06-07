@@ -118,6 +118,35 @@
               </div>
             </div>
 
+            <!-- 表达纠错详情 -->
+            <div v-if="summary.correctionDetails && summary.correctionDetails.length > 0" class="ds-corrections">
+              <h3 class="ds-details-title">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                  <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+                </svg>
+                表达纠错
+              </h3>
+              <div class="ds-correction-list">
+                <div
+                  v-for="(item, index) in summary.correctionDetails"
+                  :key="index"
+                  class="ds-correction-item"
+                >
+                  <div class="ds-correction-original">
+                    <span class="ds-correction-idx">{{ index + 1 }}</span>
+                    <span class="ds-correction-text">{{ item.originalText }}</span>
+                  </div>
+                  <div v-if="item.correctedText && item.correctedText !== item.originalText" class="ds-correction-fixed">
+                    <span class="ds-correction-arrow">→</span>
+                    <span class="ds-correction-fixed-text">{{ item.correctedText }}</span>
+                  </div>
+                  <div v-if="item.suggestion" class="ds-correction-suggestion">
+                    {{ item.suggestion }}
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <!-- 无数据 -->
             <div v-else class="ds-empty">
               <p>今天还没有练习数据</p>
@@ -490,6 +519,85 @@ watch(() => props.visible, (val) => {
   color: var(--color-text-secondary);
   width: 32px;
   flex-shrink: 0;
+}
+
+// 表达纠错
+.ds-corrections {
+  padding: 20px 24px;
+  border-top: 1px solid var(--color-border);
+}
+
+.ds-correction-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.ds-correction-item {
+  padding: 14px;
+  background: #fdf8f3;
+  border: 1px solid #fde68a;
+  border-radius: 10px;
+}
+
+.ds-correction-original {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.ds-correction-idx {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fef3c7;
+  color: #b45309;
+  font-size: 11px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.ds-correction-text {
+  font-size: 13.5px;
+  color: var(--color-text-primary);
+  line-height: 1.5;
+  word-break: break-all;
+}
+
+.ds-correction-fixed {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 8px;
+  padding-left: 28px;
+}
+
+.ds-correction-arrow {
+  color: #059669;
+  font-weight: 700;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.ds-correction-fixed-text {
+  font-size: 13px;
+  color: #059669;
+  font-weight: 500;
+  line-height: 1.5;
+  word-break: break-all;
+}
+
+.ds-correction-suggestion {
+  margin-top: 6px;
+  padding-left: 28px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  line-height: 1.5;
 }
 
 // 空数据

@@ -2,13 +2,17 @@ package com.topicone.websocket;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.topicone.dto.pronunciation.ExpressionCorrectionResult;
 import com.topicone.dto.pronunciation.PronunciationResult;
 import com.topicone.dto.ws.WsMessage;
 import com.topicone.entity.Conversation;
 import com.topicone.entity.Message;
 import com.topicone.entity.PronunciationEvaluation;
+import com.topicone.entity.UserSetting;
 import com.topicone.mapper.ConversationMapper;
 import com.topicone.mapper.PronunciationEvaluationMapper;
+import com.topicone.mapper.UserSettingMapper;
+import com.topicone.service.ExpressionCorrectionService;
 import com.topicone.service.MessageService;
 import com.topicone.service.PromptBuilderService;
 import com.topicone.service.asr.AsrService;
@@ -21,6 +25,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.socket.*;
 
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.nio.ByteBuffer;
 import java.time.LocalDateTime;
 import java.util.*;
@@ -69,6 +74,12 @@ public class VoiceWebSocketHandler implements WebSocketHandler {
 
     @Autowired
     private PronunciationService pronunciationService;
+
+    @Autowired
+    private ExpressionCorrectionService expressionCorrectionService;
+
+    @Autowired
+    private UserSettingMapper userSettingMapper;
 
     @Autowired
     private PronunciationEvaluationMapper pronunciationEvaluationMapper;
@@ -226,6 +237,30 @@ public class VoiceWebSocketHandler implements WebSocketHandler {
                             log.error("[语音] 发音评测失败: {}", error);
                             safeSendJson(session, WsMessage.error("发音评测失败: " + error));
                         });
+
+                // ★ 触发表达纠错：提取所有用户说的句子文本，发给 LLM 纠错
+                List<String> sentences = utterances.stream()
+                        .map(PronunciationService.UserUtterance::text)
+                        .toList();
+                log.info("[语音] 开始表达纠错, 共{}句", sentences.size());
+                Conversation conv = conversationMapper.selectByConversationId(voiceSession.getConversationId());
+                Long userId = conv != null ? conv.getUserId() : 0L;
+                expressionCorrectionService.correctBatch(
+                        userId,
+                        voiceSession.getConversationId(),
+                        sentences,
+                        result -> {
+                            // 逐条发送纠错结果
+                            safeSendJson(session, WsMessage.expressionCorrectionResult(result));
+                        },
+                        allResults -> {
+                            safeSendJson(session, WsMessage.expressionCorrectionComplete());
+                            log.info("[语音] 表达纠错完成, 共{}条结果", allResults.size());
+                        },
+                        error -> {
+                            log.error("[语音] 表达纠错失败: {}", error);
+                            safeSendJson(session, WsMessage.error("表达纠错失败: " + error));
+                        });
             }
         }
         cleanupSession(session.getId());
@@ -308,7 +343,8 @@ public class VoiceWebSocketHandler implements WebSocketHandler {
                     safeSendJson(session, WsMessage.status("speaking"));
 
                     // 开始 TTS 流式合成
-                    ttsService.synthesizeStream(fullText, new TtsService.TtsStreamListener() {
+                    int speechRate = getSpeechRateForConversation(conversationId);
+                    ttsService.synthesizeStream(fullText, speechRate, new TtsService.TtsStreamListener() {
                         @Override
                         public void onAudioData(byte[] audioData) {
                             String base64 = Base64.getEncoder().encodeToString(audioData);
@@ -370,6 +406,21 @@ public class VoiceWebSocketHandler implements WebSocketHandler {
             result.add(m);
         }
         return result;
+    }
+
+    /** 读取用户设置的语速并转换为 NLS speech_rate (-500~500) */
+    private int getSpeechRateForConversation(Long conversationId) {
+        try {
+            Conversation conv = conversationMapper.selectByConversationId(conversationId);
+            if (conv == null) return 0;
+            UserSetting setting = userSettingMapper.selectById(conv.getUserId());
+            if (setting == null || setting.getSpeechSpeed() == null) return 0;
+            BigDecimal speed = setting.getSpeechSpeed(); // 0.5 ~ 2.0
+            int rate = (int) ((speed.doubleValue() - 1.0) * 500);
+            return Math.max(-500, Math.min(500, rate));
+        } catch (Exception e) {
+            return 0;
+        }
     }
 
     /** 将发音评测结果保存到数据库 */

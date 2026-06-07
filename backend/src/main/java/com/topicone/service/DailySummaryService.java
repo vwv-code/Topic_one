@@ -1,6 +1,7 @@
 package com.topicone.service;
 
 import com.topicone.dto.DailySummaryResponse;
+import com.topicone.dto.GrowthRecordResponse;
 
 /**
  * 每日口语总结服务
@@ -15,4 +16,12 @@ public interface DailySummaryService {
      * @return 每日总结（含评分统计 + LLM 评语）
      */
     DailySummaryResponse getTodaySummary(Long userId);
+
+    /**
+     * 获取用户的成长记录（全部日期的每日总结数据）
+     *
+     * @param userId 用户ID
+     * @return 成长记录（含每日数据点 + 汇总统计）
+     */
+    GrowthRecordResponse getGrowthRecord(Long userId);
 }

@@ -170,3 +170,19 @@ CREATE TABLE IF NOT EXISTS `conversation_background` (
     UNIQUE INDEX `uk_conversation` (`conversation_id`),
     INDEX `idx_user` (`user_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='会话背景图表';
+
+-- ============================================
+-- 表达纠错记录表（LLM 对每句用户表达进行纠错/润色）
+-- ============================================
+CREATE TABLE IF NOT EXISTS `expression_correction` (
+    `id`               BIGINT       NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    `user_id`          BIGINT       NOT NULL COMMENT '用户ID',
+    `conversation_id`  BIGINT       NOT NULL COMMENT '会话ID',
+    `sentence_index`   INT          NOT NULL DEFAULT 0 COMMENT '句子序号（本会话内）',
+    `original_text`    VARCHAR(2048) NOT NULL COMMENT '用户原始英文句子',
+    `corrected_text`   VARCHAR(2048) COMMENT 'LLM 纠错后的句子',
+    `suggestion`       TEXT         COMMENT 'LLM 纠错建议/说明（中文）',
+    `create_time`      DATETIME     DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    INDEX `idx_ec_user_date` (`user_id`, `create_time`),
+    INDEX `idx_ec_conversation` (`conversation_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='表达纠错记录表';

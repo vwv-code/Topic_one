@@ -26,6 +26,12 @@
         </svg>
         每日总结
       </button>
+      <button class="growth-record-btn" @click="showGrowthRecord = true">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+        </svg>
+        成长记录
+      </button>
     </div>
 
     <!-- 新对话标题弹窗 -->
@@ -121,6 +127,13 @@
       :user-id="store.userId"
       @close="showDailySummary = false"
     />
+
+    <!-- 成长记录弹窗 -->
+    <GrowthRecordModal
+      :visible="showGrowthRecord"
+      :user-id="store.userId"
+      @close="showGrowthRecord = false"
+    />
   </aside>
 </template>
 
@@ -128,6 +141,7 @@
 import { ref, nextTick, watch, onMounted, onUnmounted } from 'vue'
 import { useAppStore } from '@/stores/app'
 import DailySummaryModal from '@/components/layout/DailySummaryModal.vue'
+import GrowthRecordModal from '@/components/layout/GrowthRecordModal.vue'
 
 const store = useAppStore()
 
@@ -153,6 +167,7 @@ async function confirmNewChat() {
 // 用户菜单
 const showUserMenu = ref(false)
 const showDailySummary = ref(false)
+const showGrowthRecord = ref(false)
 const userInfoRef = ref<HTMLElement | null>(null)
 
 function toggleUserMenu() {
@@ -274,6 +289,30 @@ onUnmounted(() => {
     background: var(--color-accent-subtle);
     border-color: var(--color-accent-muted);
     color: var(--color-accent);
+  }
+}
+
+.growth-record-btn {
+  width: 100%;
+  padding: 9px 14px;
+  margin-top: 6px;
+  background: var(--color-bg-primary);
+  border: 1px dashed var(--color-border-hover);
+  border-radius: 8px;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+
+  &:hover {
+    background: #f0fdf4;
+    border-color: #86efac;
+    color: #16a34a;
   }
 }
 

@@ -17,6 +17,9 @@
 
     <!-- 发音评测面板（右侧滑出） -->
     <PronunciationPanel />
+
+    <!-- 表达纠错面板（右侧滑出） -->
+    <ExpressionCorrectionPanel />
   </div>
 </template>
 
@@ -26,6 +29,7 @@ import Header from '@/components/layout/Header.vue'
 import ContentArea from '@/components/layout/ContentArea.vue'
 import VoiceInput from '@/components/layout/VoiceInput.vue'
 import PronunciationPanel from '@/components/layout/PronunciationPanel.vue'
+import ExpressionCorrectionPanel from '@/components/layout/ExpressionCorrectionPanel.vue'
 </script>
 
 <style lang="scss" scoped>
