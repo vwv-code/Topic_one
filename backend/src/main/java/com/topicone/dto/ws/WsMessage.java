@@ -69,4 +69,14 @@ public class WsMessage {
     public static WsMessage pronunciationComplete() {
         return new WsMessage("pronunciation_complete", null);
     }
+
+    /** 表达纠错结果 */
+    public static WsMessage expressionCorrectionResult(Object result) {
+        return new WsMessage("expression_correction_result", result);
+    }
+
+    /** 表达纠错完成（全部句子纠错结束） */
+    public static WsMessage expressionCorrectionComplete() {
+        return new WsMessage("expression_correction_complete", null);
+    }
 }

@@ -112,7 +112,7 @@ public class AliyunTtsService implements TtsService {
      * 6. 收到 SynthesisCompleted → 回调 onComplete()
      */
     @Override
-    public void synthesizeStream(String text, TtsStreamListener listener) {
+    public void synthesizeStream(String text, int speechRate, TtsStreamListener listener) {
         try {
             // Step 1: 获取 Token
             String token = getToken();
@@ -126,8 +126,8 @@ public class AliyunTtsService implements TtsService {
             OkHttpClient.Builder builder = httpClient.newBuilder();
             builder.readTimeout(60, TimeUnit.SECONDS); // 单次合成超时
 
-            okhttp3.WebSocket ws = builder.build().newWebSocket(request, new TtsWebSocketListener(text, listener));
-            log.info("[TTS] 开始合成, 文本长度={}, url={}", text.length(), url);
+            okhttp3.WebSocket ws = builder.build().newWebSocket(request, new TtsWebSocketListener(text, speechRate, listener));
+            log.info("[TTS] 开始合成, 文本长度={}, speechRate={}, url={}", text.length(), speechRate, url);
         } catch (Exception e) {
             log.error("[TTS] 合成启动失败", e);
             listener.onError("TTS 启动失败: " + e.getMessage());
@@ -253,12 +253,14 @@ public class AliyunTtsService implements TtsService {
     private class TtsWebSocketListener extends okhttp3.WebSocketListener {
 
         private final String text;
+        private final int speechRate;
         private final TtsStreamListener listener;
         /** 整个会话共享的 task_id */
         private final String taskId;
 
-        TtsWebSocketListener(String text, TtsStreamListener listener) {
+        TtsWebSocketListener(String text, int speechRate, TtsStreamListener listener) {
             this.text = text;
+            this.speechRate = speechRate;
             this.listener = listener;
             this.taskId = UUID.randomUUID().toString().replace("-", "");
         }

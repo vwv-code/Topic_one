@@ -67,6 +67,13 @@ export interface PronunciationResultItem {
   wordDetails: PronunciationWordDetail[]
 }
 
+export interface ExpressionCorrectionResultItem {
+  sentenceIndex: number
+  originalText: string
+  correctedText: string
+  suggestion: string
+}
+
 export const useAppStore = defineStore('app', () => {
   // ========== 状态 ==========
   const chatHistories = ref<ChatHistory[]>([])
@@ -123,6 +130,14 @@ export const useAppStore = defineStore('app', () => {
   const pronunciationEvaluating = ref(false)
   /** 评测面板是否展开 */
   const pronunciationPanelVisible = ref(false)
+
+  // ========== 表达纠错状态 ==========
+  /** 纠错结果列表（每句一个） */
+  const expressionCorrectionResults = ref<ExpressionCorrectionResultItem[]>([])
+  /** 纠错面板是否展开 */
+  const expressionCorrectionPanelVisible = ref(false)
+  /** 表达纠错是否已完成（用于同步清理判断） */
+  let expressionCorrectionDone = false
 
   // ========== 沉浸式体验状态 ==========
   /** 是否开启沉浸式体验 */
@@ -317,6 +332,10 @@ export const useAppStore = defineStore('app', () => {
     pronunciationResults.value = []
     pronunciationEvaluating.value = true
     pronunciationPanelVisible.value = false
+    // 清除上一次的表达纠错结果
+    expressionCorrectionResults.value = []
+    expressionCorrectionPanelVisible.value = false
+    expressionCorrectionDone = false
 
     try {
       // 1. 建立 WebSocket 连接
@@ -407,6 +426,10 @@ export const useAppStore = defineStore('app', () => {
     pronunciationResults.value = []
     pronunciationEvaluating.value = false
     pronunciationPanelVisible.value = false
+    // 清除表达纠错状态
+    expressionCorrectionResults.value = []
+    expressionCorrectionPanelVisible.value = false
+    expressionCorrectionDone = false
   }
 
   /**
@@ -490,19 +513,26 @@ export const useAppStore = defineStore('app', () => {
         break
 
       case 'pronunciation_complete':
-        // 全部评测完成 → 退出沉浸式全屏 + 关闭连接
+        // 全部评测完成 → 退出沉浸式全屏（但不关闭连接，等纠错也完成）
         pronunciationEvaluating.value = false
         pronunciationPanelVisible.value = true
-        aiStatus.value = 'ready'
-        // 清理 WebSocket 但不清除评测结果
-        stopPcmRecording()
-        if (ws) { ws.close(); ws = null }
-        recordingState.value.isRecording = false
-        wsStatus.value = 'disconnected' as WsConnectionStatus
-        recognitionText.value = ''
-        aiStreamingText.value = ''
-        hideSubtitle()
         console.log('[Voice] 发音评测完成, 共', pronunciationResults.value.length, '条结果')
+        // 检查是否纠错也已完成
+        tryFinishAfterEvaluation()
+        break
+
+      case 'expression_correction_result':
+        // 收到一条表达纠错结果
+        expressionCorrectionResults.value.push(msg.data as ExpressionCorrectionResultItem)
+        break
+
+      case 'expression_correction_complete':
+        // 全部纠错完成
+        expressionCorrectionPanelVisible.value = true
+        expressionCorrectionDone = true
+        console.log('[Voice] 表达纠错完成, 共', expressionCorrectionResults.value.length, '条结果')
+        // 检查是否评测也已完成
+        tryFinishAfterEvaluation()
         break
 
       default:
@@ -545,6 +575,24 @@ export const useAppStore = defineStore('app', () => {
         aiStatus.value = 'ready'
         break
     }
+  }
+
+  /** 发音评测和表达纠错都完成后执行清理 */
+  function tryFinishAfterEvaluation() {
+    // 如果发音评测还在进行中，等待其完成
+    if (pronunciationEvaluating.value) return
+    // 如果表达纠错还没完成，等待其完成
+    if (!expressionCorrectionDone) return
+
+    aiStatus.value = 'ready'
+    stopPcmRecording()
+    if (ws) { ws.close(); ws = null }
+    recordingState.value.isRecording = false
+    wsStatus.value = 'disconnected' as WsConnectionStatus
+    recognitionText.value = ''
+    aiStreamingText.value = ''
+    hideSubtitle()
+    console.log('[Voice] 评测与纠错均完成，连接已关闭')
   }
 
   // ========== PCM 录音（Web Audio API）==========
@@ -1013,6 +1061,9 @@ export const useAppStore = defineStore('app', () => {
     pronunciationResults,
     pronunciationEvaluating,
     pronunciationPanelVisible,
+    // 表达纠错状态
+    expressionCorrectionResults,
+    expressionCorrectionPanelVisible,
     // 沉浸式体验状态
     immersiveEnabled,
     backgroundImageUrl,

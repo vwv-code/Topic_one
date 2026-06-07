@@ -10,10 +10,11 @@ public interface TtsService {
     /**
      * 流式文本转语音
      *
-     * @param text     要合成的文本
-     * @param listener 音频分片监听器
+     * @param text       要合成的文本
+     * @param speechRate 语速（NLS speech_rate，范围 -500~500，0=正常）
+     * @param listener   音频分片监听器
      */
-    void synthesizeStream(String text, TtsStreamListener listener);
+    void synthesizeStream(String text, int speechRate, TtsStreamListener listener);
 
     /**
      * TTS 流式响应监听器
