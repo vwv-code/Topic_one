@@ -17,6 +17,15 @@
         </svg>
         新对话
       </button>
+      <button class="daily-summary-btn" @click="showDailySummary = true">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+          <polyline points="14 2 14 8 20 8"/>
+          <line x1="16" y1="13" x2="8" y2="13"/>
+          <line x1="16" y1="17" x2="8" y2="17"/>
+        </svg>
+        每日总结
+      </button>
     </div>
 
     <!-- 新对话标题弹窗 -->
@@ -80,8 +89,21 @@
       </ul>
     </div>
 
-    <div class="user-info">
-      <div class="avatar">
+    <div class="user-info" ref="userInfoRef">
+      <!-- 弹出菜单 -->
+      <Transition name="popup-slide">
+        <div v-if="showUserMenu" class="user-popup">
+          <button class="popup-item logout" @click="handleLogout">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+              <polyline points="16 17 21 12 16 7"/>
+              <line x1="21" y1="12" x2="9" y2="12"/>
+            </svg>
+            退出登录
+          </button>
+        </div>
+      </Transition>
+      <div class="avatar" @click="toggleUserMenu">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
           <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/>
           <circle cx="12" cy="7" r="4"/>
@@ -92,13 +114,20 @@
         <div class="user-status">连续学习 7 天</div>
       </div>
     </div>
+
+    <!-- 每日总结弹窗 -->
+    <DailySummaryModal
+      :visible="showDailySummary"
+      :user-id="store.userId"
+      @close="showDailySummary = false"
+    />
   </aside>
 </template>
 
 <script setup lang="ts">
-import { ref, nextTick, watch } from 'vue'
+import { ref, nextTick, watch, onMounted, onUnmounted } from 'vue'
 import { useAppStore } from '@/stores/app'
-import { onMounted } from 'vue'
+import DailySummaryModal from '@/components/layout/DailySummaryModal.vue'
 
 const store = useAppStore()
 
@@ -121,10 +150,37 @@ async function confirmNewChat() {
   await store.createNewChat(title)
 }
 
+// 用户菜单
+const showUserMenu = ref(false)
+const showDailySummary = ref(false)
+const userInfoRef = ref<HTMLElement | null>(null)
+
+function toggleUserMenu() {
+  showUserMenu.value = !showUserMenu.value
+}
+
+function handleLogout() {
+  showUserMenu.value = false
+  // 退出登录逻辑：关闭 WebSocket，清空状态，刷新页面
+  console.log('[退出登录] 用户退出')
+  window.location.reload()
+}
+
+// 点击外部关闭菜单
+function handleClickOutside(e: MouseEvent) {
+  if (userInfoRef.value && !userInfoRef.value.contains(e.target as Node)) {
+    showUserMenu.value = false
+  }
+}
+
 onMounted(async () => {
-  // 先加载场景列表（用于解析会话的场景名），再加载会话历史
   if (!store.scenesLoaded) await store.fetchScenes()
-  store.fetchConversations()
+  await store.fetchConversations()
+  document.addEventListener('click', handleClickOutside)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', handleClickOutside)
 })
 </script>
 
@@ -175,6 +231,30 @@ onMounted(async () => {
 .new-chat-btn {
   width: 100%;
   padding: 10px 14px;
+  background: var(--color-bg-primary);
+  border: 1px dashed var(--color-border-hover);
+  border-radius: 8px;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+
+  &:hover {
+    background: var(--color-accent-subtle);
+    border-color: var(--color-accent-muted);
+    color: var(--color-accent);
+  }
+}
+
+.daily-summary-btn {
+  width: 100%;
+  padding: 9px 14px;
+  margin-top: 8px;
   background: var(--color-bg-primary);
   border: 1px dashed var(--color-border-hover);
   border-radius: 8px;
@@ -306,6 +386,7 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   gap: 11px;
+  position: relative;
 }
 
 .avatar {
@@ -317,6 +398,76 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s;
+
+  &:hover {
+    background: var(--color-accent-light);
+    color: var(--color-accent);
+  }
+}
+
+/* 头像弹出菜单 */
+.user-popup {
+  position: absolute;
+  left: 16px;
+  bottom: 62px;
+  background: var(--color-bg-primary);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+  padding: 6px;
+  min-width: 180px;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.popup-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 13.5px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.12s;
+
+  &:hover {
+    background: var(--color-bg-hover);
+    color: var(--color-text-primary);
+  }
+
+  &.logout {
+    &:hover {
+      background: #fef2f2;
+      color: #ef4444;
+    }
+
+    svg {
+      opacity: 0.7;
+    }
+  }
+}
+
+/* 弹出动画 */
+.popup-slide-enter-active {
+  transition: all 0.2s ease;
+}
+
+.popup-slide-leave-active {
+  transition: all 0.15s ease;
+}
+
+.popup-slide-enter-from,
+.popup-slide-leave-to {
+  opacity: 0;
+  transform: translateY(8px) scale(0.96);
 }
 
 .user-details {

@@ -98,3 +98,40 @@ CREATE TABLE IF NOT EXISTS `conversation_scene_config` (
     `create_time`     DATETIME     DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `update_time`     DATETIME     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='会话场景配置表';
+
+-- ============================================
+-- 发音评测记录表（每句用户语音的评测结果）
+-- ============================================
+CREATE TABLE IF NOT EXISTS `pronunciation_evaluation` (
+    `id`               BIGINT       NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    `user_id`          BIGINT       NOT NULL COMMENT '用户ID',
+    `conversation_id`  BIGINT       NOT NULL COMMENT '会话ID',
+    `ref_text`         VARCHAR(1024) NOT NULL COMMENT '参考文本（用户说的话）',
+    `overall_score`    DECIMAL(5,1) DEFAULT 0 COMMENT '综合得分 (0-100)',
+    `accuracy_score`   DECIMAL(5,1) DEFAULT 0 COMMENT '发音准确度得分',
+    `fluency_score`    DECIMAL(5,1) DEFAULT 0 COMMENT '流利度得分',
+    `integrity_score`  DECIMAL(5,1) DEFAULT 0 COMMENT '完整度得分',
+    `audio_duration`   INT          DEFAULT 0 COMMENT '用户录音时长（毫秒）',
+    `word_details`     JSON         DEFAULT NULL COMMENT '单词级别详情（JSON）',
+    `create_time`      DATETIME     DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    INDEX `idx_pe_user_date` (`user_id`, `create_time`),
+    INDEX `idx_pe_conversation` (`conversation_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='发音评测记录表';
+
+-- ============================================
+-- 每日总结表（LLM 生成的每日口语总结报告）
+-- ============================================
+CREATE TABLE IF NOT EXISTS `daily_summary` (
+    `id`                  BIGINT       NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    `user_id`             BIGINT       NOT NULL COMMENT '用户ID',
+    `summary_date`        DATE         NOT NULL COMMENT '总结日期',
+    `eval_count`          INT          DEFAULT 0 COMMENT '当天评测句子数',
+    `avg_overall_score`   DECIMAL(5,1) DEFAULT 0 COMMENT '当天综合平均分',
+    `avg_accuracy_score`  DECIMAL(5,1) DEFAULT 0 COMMENT '当天准确度平均分',
+    `avg_fluency_score`   DECIMAL(5,1) DEFAULT 0 COMMENT '当天流利度平均分',
+    `avg_integrity_score` DECIMAL(5,1) DEFAULT 0 COMMENT '当天完整度平均分',
+    `summary_content`     TEXT         COMMENT 'LLM 生成的总结评语',
+    `create_time`         DATETIME     DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `update_time`         DATETIME     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    INDEX `idx_ds_user_date` (`user_id`, `summary_date`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='每日口语总结表';

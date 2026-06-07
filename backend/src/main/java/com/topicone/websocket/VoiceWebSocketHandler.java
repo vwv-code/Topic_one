@@ -1,9 +1,14 @@
 package com.topicone.websocket;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.topicone.dto.pronunciation.PronunciationResult;
 import com.topicone.dto.ws.WsMessage;
+import com.topicone.entity.Conversation;
 import com.topicone.entity.Message;
+import com.topicone.entity.PronunciationEvaluation;
+import com.topicone.mapper.ConversationMapper;
+import com.topicone.mapper.PronunciationEvaluationMapper;
 import com.topicone.service.MessageService;
 import com.topicone.service.PromptBuilderService;
 import com.topicone.service.asr.AsrService;
@@ -17,6 +22,7 @@ import org.springframework.web.socket.*;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -63,6 +69,12 @@ public class VoiceWebSocketHandler implements WebSocketHandler {
 
     @Autowired
     private PronunciationService pronunciationService;
+
+    @Autowired
+    private PronunciationEvaluationMapper pronunciationEvaluationMapper;
+
+    @Autowired
+    private ConversationMapper conversationMapper;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -206,6 +218,9 @@ public class VoiceWebSocketHandler implements WebSocketHandler {
                             }
                             safeSendJson(session, WsMessage.pronunciationComplete());
                             log.info("[语音] 发音评测完成, 共{}条结果", results.size());
+
+                            // ★ 存储评测结果到数据库
+                            savePronunciationResults(voiceSession.getConversationId(), results);
                         },
                         error -> {
                             log.error("[语音] 发音评测失败: {}", error);
@@ -355,6 +370,46 @@ public class VoiceWebSocketHandler implements WebSocketHandler {
             result.add(m);
         }
         return result;
+    }
+
+    /** 将发音评测结果保存到数据库 */
+    private void savePronunciationResults(Long conversationId, List<PronunciationResult> results) {
+        try {
+            Conversation conv = conversationMapper.selectByConversationId(conversationId);
+            if (conv == null) {
+                log.warn("[语音] 未找到会话, conversationId={}, 跳过评测存储", conversationId);
+                return;
+            }
+            Long userId = conv.getUserId();
+
+            for (PronunciationResult r : results) {
+                PronunciationEvaluation pe = new PronunciationEvaluation();
+                pe.setUserId(userId);
+                pe.setConversationId(conversationId);
+                pe.setRefText(r.getRefText());
+                pe.setOverallScore(r.getOverallScore());
+                pe.setAccuracyScore(r.getAccuracyScore());
+                pe.setFluencyScore(r.getFluencyScore());
+                pe.setIntegrityScore(r.getIntegrityScore());
+                pe.setAudioDuration(r.getAudioDuration());
+                pe.setCreateTime(LocalDateTime.now());
+
+                // 序列化单词详情的 JSON
+                if (r.getWordDetails() != null && !r.getWordDetails().isEmpty()) {
+                    try {
+                        pe.setWordDetails(objectMapper.writeValueAsString(r.getWordDetails()));
+                    } catch (JsonProcessingException e) {
+                        log.warn("[语音] 序列化单词详情失败", e);
+                    }
+                }
+
+                pronunciationEvaluationMapper.insert(pe);
+            }
+            log.info("[语音] 已存储 {} 条发音评测记录, userId={}, conversationId={}",
+                    results.size(), userId, conversationId);
+        } catch (Exception e) {
+            log.error("[语音] 存储发音评测失败", e);
+        }
     }
 
     /** 安全发送 JSON（连接断开时不抛异常） */

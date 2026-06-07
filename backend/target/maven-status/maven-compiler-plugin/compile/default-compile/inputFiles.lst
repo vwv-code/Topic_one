@@ -1,11 +1,13 @@
 D:\workspace\Topic_one\backend\src\main\java\com\topicone\dto\SceneDTO.java
 D:\workspace\Topic_one\backend\src\main\java\com\topicone\config\CorsConfig.java
 D:\workspace\Topic_one\backend\src\main\java\com\topicone\service\tts\AliyunTtsService.java
+D:\workspace\Topic_one\backend\src\main\java\com\topicone\mapper\PronunciationEvaluationMapper.java
 D:\workspace\Topic_one\backend\src\main\java\com\topicone\service\impl\ConversationServiceImpl.java
 D:\workspace\Topic_one\backend\src\main\java\com\topicone\dto\ConversationDTO.java
 D:\workspace\Topic_one\backend\src\main\java\com\topicone\entity\UserSetting.java
 D:\workspace\Topic_one\backend\src\main\java\com\topicone\service\MessageService.java
 D:\workspace\Topic_one\backend\src\main\java\com\topicone\service\impl\UserSettingServiceImpl.java
+D:\workspace\Topic_one\backend\src\main\java\com\topicone\entity\PronunciationEvaluation.java
 D:\workspace\Topic_one\backend\src\main\java\com\topicone\dto\pronunciation\PronunciationResult.java
 D:\workspace\Topic_one\backend\src\main\java\com\topicone\controller\ConversationController.java
 D:\workspace\Topic_one\backend\src\main\java\com\topicone\dto\SaveSettingsRequest.java
@@ -22,6 +24,7 @@ D:\workspace\Topic_one\backend\src\main\java\com\topicone\entity\Conversation.ja
 D:\workspace\Topic_one\backend\src\main\java\com\topicone\mapper\MessageMapper.java
 D:\workspace\Topic_one\backend\src\main\java\com\topicone\common\exception\BusinessException.java
 D:\workspace\Topic_one\backend\src\main\java\com\topicone\service\asr\AliyunAsrService.java
+D:\workspace\Topic_one\backend\src\main\java\com\topicone\controller\DailySummaryController.java
 D:\workspace\Topic_one\backend\src\main\java\com\topicone\mapper\SceneMapper.java
 D:\workspace\Topic_one\backend\src\main\java\com\topicone\dto\UpdateSceneRequest.java
 D:\workspace\Topic_one\backend\src\main\java\com\topicone\service\PromptBuilderService.java
@@ -34,9 +37,12 @@ D:\workspace\Topic_one\backend\src\main\java\com\topicone\service\SceneService.j
 D:\workspace\Topic_one\backend\src\main\java\com\topicone\dto\ConversationSceneConfigDTO.java
 D:\workspace\Topic_one\backend\src\main\java\com\topicone\dto\UserSettingsDTO.java
 D:\workspace\Topic_one\backend\src\main\java\com\topicone\dto\CreateSceneRequest.java
+D:\workspace\Topic_one\backend\src\main\java\com\topicone\dto\DailySummaryResponse.java
 D:\workspace\Topic_one\backend\src\main\java\com\topicone\service\impl\MessageServiceImpl.java
 D:\workspace\Topic_one\backend\src\main\java\com\topicone\dto\ws\WsMessage.java
+D:\workspace\Topic_one\backend\src\main\java\com\topicone\service\DailySummaryService.java
 D:\workspace\Topic_one\backend\src\main\java\com\topicone\service\impl\SceneServiceImpl.java
+D:\workspace\Topic_one\backend\src\main\java\com\topicone\service\impl\DailySummaryServiceImpl.java
 D:\workspace\Topic_one\backend\src\main\java\com\topicone\entity\ConversationSceneConfig.java
 D:\workspace\Topic_one\backend\src\main\java\com\topicone\common\result\Result.java
 D:\workspace\Topic_one\backend\src\main\java\com\topicone\dto\CreateConversationRequest.java
@@ -47,5 +53,7 @@ D:\workspace\Topic_one\backend\src\main\java\com\topicone\service\pronunciation\
 D:\workspace\Topic_one\backend\src\main\java\com\topicone\service\asr\AsrService.java
 D:\workspace\Topic_one\backend\src\main\java\com\topicone\service\pronunciation\XunfeiPronunciationService.java
 D:\workspace\Topic_one\backend\src\main\java\com\topicone\service\impl\ConversationSceneConfigServiceImpl.java
+D:\workspace\Topic_one\backend\src\main\java\com\topicone\mapper\DailySummaryMapper.java
 D:\workspace\Topic_one\backend\src\main\java\com\topicone\service\impl\PromptBuilderServiceImpl.java
+D:\workspace\Topic_one\backend\src\main\java\com\topicone\entity\DailySummary.java
 D:\workspace\Topic_one\backend\src\main\java\com\topicone\websocket\WebSocketConfig.java
