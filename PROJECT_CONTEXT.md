@@ -8,7 +8,7 @@
 
 **项目名称**：TopicOne（AI 英语口语陪练）
 **工作目录**：`d:\workspace\Topic_one`
-**当前阶段**：核心功能全部完成，包括登录注册、每日总结、沉浸式体验（文生图 + 全屏）、发音评测、表达纠错
+**当前阶段**：核心功能全部完成，包括登录注册、每日总结、沉浸式体验（文生图 + 全屏）、发音评测、表达纠错、成长记录、难度等级约束、TTS 语速控制
 
 ---
 
@@ -72,9 +72,11 @@ d:\workspace\Topic_one/
 │   │   │   ├── RegisterRequest.java
 │   │   │   ├── ResetPasswordRequest.java
 │   │   │   ├── DailySummaryResponse.java
+│   │   │   ├── GrowthRecordResponse.java       # 成长记录响应
 │   │   │   ├── BackgroundResponse.java
 │   │   │   ├── ws/WsMessage.java
 │   │   │   ├── pronunciation/PronunciationResult.java
+│   │   │   ├── pronunciation/ExpressionCorrectionResult.java  # 表达纠错结果
 │   │   │   └── ...
 │   │   ├── entity/
 │   │   │   ├── User.java                    # users 表
@@ -85,17 +87,20 @@ d:\workspace\Topic_one/
 │   │   │   ├── Message.java                 # user_message 表
 │   │   │   ├── PronunciationEvaluation.java # pronunciation_evaluation 表
 │   │   │   ├── DailySummary.java            # daily_summary 表
+│   │   │   ├── ExpressionCorrection.java     # expression_correction 表
 │   │   │   └── ConversationBackground.java  # conversation_background 表
 │   │   ├── mapper/
 │   │   │   ├── UserMapper.java
 │   │   │   ├── ConversationBackgroundMapper.java
 │   │   │   ├── PronunciationEvaluationMapper.java
 │   │   │   ├── DailySummaryMapper.java
+│   │   │   ├── ExpressionCorrectionMapper.java
 │   │   │   └── ...
 │   │   ├── service/
 │   │   │   ├── UserService.java + impl/
 │   │   │   ├── BackgroundService.java + impl/
 │   │   │   ├── DailySummaryService.java + impl/
+│   │   │   ├── ExpressionCorrectionService.java + impl/
 │   │   │   ├── asr/  llm/  tts/  pronunciation/
 │   │   │   └── impl/  (PromptBuilder / Message / Conversation 等)
 │   │   └── websocket/
@@ -113,13 +118,14 @@ d:\workspace\Topic_one/
 │   │   │   ├── background.ts         # 沉浸式背景图 (timeout 120s)
 │   │   │   ├── scenes.ts / conversations.ts
 │   │   ├── components/layout/
-│   │   │   ├── Sidebar.vue           # 左侧边栏（含每日总结按钮 + 用户菜单）
+│   │   │   ├── Sidebar.vue           # 左侧边栏（含每日总结 + 成长记录按钮 + 用户菜单）
 │   │   │   ├── Header.vue            # 顶部（场景设置 + 标题编辑 + 字幕开关 + 沉浸体验按钮）
 │   │   │   ├── ContentArea.vue       # 内容区（普通模式 + 沉浸式全屏模式）
 │   │   │   ├── VoiceInput.vue        # 底部麦克风（自动循环模式）
 │   │   │   ├── DailySummaryModal.vue # 每日总结弹窗
 │   │   │   └── PronunciationPanel.vue # 发音评测面板
 │   │   │   └── ExpressionCorrectionPanel.vue # 表达纠错面板
+│   │   │   └── GrowthRecordModal.vue  # 成长记录弹窗
 │   │   ├── stores/app.ts             # Pinia 全局状态
 │   │   ├── views/
 │   │   │   ├── HomeView.vue          # 主页面
@@ -221,6 +227,23 @@ CREATE TABLE conversation_background (
 );
 ```
 
+### 4.6 expression_correction 表
+
+```sql
+CREATE TABLE expression_correction (
+    id               BIGINT       NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    user_id          BIGINT       NOT NULL COMMENT '用户ID',
+    conversation_id  BIGINT       NOT NULL COMMENT '会话ID',
+    sentence_index   INT          NOT NULL DEFAULT 0 COMMENT '句子序号（本会话内）',
+    original_text    VARCHAR(2048) NOT NULL COMMENT '用户原始英文句子',
+    corrected_text   VARCHAR(2048) COMMENT 'LLM 纠错后的句子',
+    suggestion       TEXT         COMMENT 'LLM 纠错建议/说明（中文）',
+    create_time      DATETIME     DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_ec_user_date (user_id, create_time),
+    INDEX idx_ec_conversation (conversation_id)
+);
+```
+
 ---
 
 ## 5. 后端 API 接口清单（全部）
@@ -247,7 +270,8 @@ Result<T>  { code: 200, message: "success", data: T }
 
 | 方法 | 路径 | 功能 |
 |------|------|------|
-| GET | `/api/daily-summary` | 获取今日口语总结（含 LLM 生成评测反馈，缓存于 daily_summary 表） |
+| GET | `/api/daily-summary?userId=X` | 获取今日口语总结（含 LLM 评测反馈 + 表达纠错详情，每日首次调用生成并缓存于 daily_summary 表，后续访问自动刷最新统计） |
+| GET | `/api/daily-summary/history?userId=X` | 获取用户的成长记录（全部日期的每日总结数据点，用于可视化趋势图） |
 
 ### 沉浸式体验 (`/api/background`) — 需要 token
 
@@ -257,7 +281,9 @@ Result<T>  { code: 200, message: "success", data: T }
 
 ### WebSocket (`ws://localhost:8080/ws/voice`)
 
-消息格式与原文档一致，额外增加扬声器评测消息。
+消息类型（服务端→前端）：`status`、`recognition_text`、`recognition_final`、`ai_response_text`、`ai_response_complete`、`audio_chunk`、`audio_complete`、`error`、`pronunciation_result`、`pronunciation_complete`、`expression_correction_result`、`expression_correction_complete`
+
+控制指令（前端→服务端）：`{"type":"start","conversationId":X}` / `{"type":"stop"}`
 
 ---
 
@@ -286,25 +312,7 @@ JWT 鉴权：
   - 401 → 前端自动清除 localStorage → 跳转登录页
 ```
 
-### 6.2 每日总结流程
-
-```
-Sidebar 头像点击 → 弹出用户菜单 → 点击「每日总结」
-  ↓
-DailySummaryModal 弹出
-  ↓
-GET /api/daily-summary
-  ↓
-后端：
-  1. 查 daily_summary 表（按 userId + 今天日期）→ 命中直接返回
-  2. 未命中：查 pronunciation_evaluation 表（今天全部记录）
-     → 调 LLM（角色"英语口语评测老师"）生成反馈
-     → 写入 daily_summary 表 → 返回
-
-前端显示：圆形评分环（SVG）+ 4 维度网格 + AI 评论 + 逐句进度条
-```
-
-### 6.3 沉浸式体验流程
+### 6.2 沉浸式体验流程
 
 完整流程如下：
 
@@ -373,7 +381,7 @@ GET /api/daily-summary
    Header 再次点击「沉浸体验」→ disableImmersive()
 ```
 
-### 6.4 表达纠错流程
+### 6.3 表达纠错流程
 
 ```
 用户点击停止 → 提取 utterances 中全部文本
@@ -387,14 +395,84 @@ LLM 返回 JSON: { "corrected_text": "纠正后句子", "suggestion": "中文纠
 全部完成推送 expression_correction_complete → 前端 ExpressionCorrectionPanel 弹出
 ```
 
-### 6.5 字幕行为
+### 6.4 每日总结流程（含纠错 + 数据同步）
+
+```
+Sidebar 点击「每日总结」→ DailySummaryModal 弹出
+  ↓
+GET /api/daily-summary?userId=X
+  ↓
+后端：
+  1. 查 pronunciation_evaluation 表（今天全部评测记录）
+  2. 查 expression_correction 表（今天全部纠错记录）★
+  3. 查 daily_summary 表（缓存）
+  ├── 缓存命中 → 更新 evalCount/avg 到最新 → 返回（含纠错详情）★
+  └── 缓存未命中 → 拼装评测+纠错数据 → LLM 生成总结 → 写入 daily_summary → 返回
+  ↓
+前端显示：评分环 + AI 点评 + 逐句详情 + 表达纠错卡片
+
+★ 关键修复：缓存命中时会回写 daily_summary 表，确保成长记录数据实时同步
+```
+
+### 6.5 成长记录流程
+
+```
+Sidebar 点击「成长记录」→ GrowthRecordModal 弹出
+  ↓
+GET /api/daily-summary/history?userId=X
+  ↓
+后端：查 daily_summary 表（全部日期）→ 构建数据点列表
+  ↓
+前端显示：
+  ├── 4 个统计卡片：练习天数 / 总句数 / 最新综合分 / 趋势方向
+  ├── SVG 多折线趋势图（综合/准确度/流利度/完整度 4 条线）
+  └── 逐日详情列表（日期 + 各维度分数 + 练习句数）
+```
+
+### 6.6 TTS 语速控制
+
+```
+场景设置中调整「AI 语音速度」（0.5x ~ 2.0x）
+  ↓
+保存到 user_settings.speech_speed
+  ↓
+VoiceWebSocketHandler.runLlmTtsPipeline()
+  → getSpeechRateForConversation(conversationId)
+    → 查 user_settings.speech_speed
+    → 映射公式: rate = (speed - 1.0) × 500, 钳位 [-500, 500]
+  → ttsService.synthesizeStream(text, speechRate, listener)
+  → AliyunTtsService 将 speech_rate 放入 StartSynthesis payload
+```
+
+### 6.7 LLM 难度等级约束
+
+```
+VoiceWebSocketHandler.runLlmTtsPipeline()
+  → promptBuilderService.buildSystemPrompt(conversationId)
+  → PromptBuilderServiceImpl:
+    1. 场景名称
+    2. 角色设定 + 场景描述
+    3. resolveDifficultyLevel(conversationId) → 难度判定 ★
+       - 优先 scenes.difficulty (1→beginner / 2→intermediate / 3→advanced)
+       - 回退 user_settings.difficulty
+       - 默认 intermediate
+    4. appendDifficultyRule() → 注入约束：
+       初级: 基础单词 ≤10词/句, 500词以内, 多鼓励
+       中级: 复合句 ≤15词/句, 引入习语
+       高级: 复杂句型, 俚语, 深度讨论
+    5. 通用交互规则
+  →
+LLM 根据难度指令调整回复复杂度 ★
+```
+
+### 6.8 字幕行为
 
 - 字幕开启后，AI 说话时显示字幕文字
 - **不会自动消失**，直到下一个字幕出现或用户手动停止麦克风
 - 全屏模式下，字幕始终可见（不受鼠标移动显隐影响）
 - 普通模式下，字幕显示在 AI 虚拟人头像下方
 
-### 6.5 TTS 音量控制
+### 6.9 TTS 音量控制
 
 - Store 中 `ttsVolume` (0-100) + `setTtsVolume()` 
 - `startTtsPlayback()` 创建 AudioContext 时同时创建 GainNode
@@ -402,7 +480,7 @@ LLM 返回 JSON: { "corrected_text": "纠正后句子", "suggestion": "中文纠
 - 音量滑块拖动实时更新 `GainNode.gain.value`
 - 全屏模式下底部工具栏显示音量滑块，普通模式下暂不显示
 
-### 6.6 浏览器全屏同步
+### 6.10 浏览器全屏同步
 
 - 进入沉浸式全屏 → `document.documentElement.requestFullscreen()`
 - 退出沉浸式全屏 → `document.exitFullscreen()`
@@ -446,6 +524,17 @@ UserServiceImpl.register()
 | `pronunciationPanelVisible` | `ref<boolean>` | 评测面板可见 |
 | `expressionCorrectionResults` | `ref<ExpressionCorrectionResultItem[]>` | 表达纠错结果 |
 | `expressionCorrectionPanelVisible` | `ref<boolean>` | 纠错面板可见 |
+
+### ExpressionCorrectionResultItem 类型
+
+```ts
+interface ExpressionCorrectionResultItem {
+  sentenceIndex: number     // 句子序号（本会话内）
+  originalText: string      // 用户原始英文句子
+  correctedText: string     // LLM 纠错后的句子
+  suggestion: string        // 纠错建议（中文）
+}
+```
 
 ### 关键计算属性
 
