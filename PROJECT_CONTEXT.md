@@ -36,6 +36,7 @@
   - **ASR**：阿里云 NLS（Paraformer 实时语音识别，CreateToken 鉴权）
   - **LLM**：通义千问（DashScope SDK 流式调用，qwen-turbo 模型）
   - **TTS**：阿里云语音合成（SpeechSynthesizer 免费版）
+  - **发音评测**：讯飞语音评测（流式版 ISE API，WSS 连接 + HMAC-SHA256 鉴权 + XML 结果解析）
 
 ---
 
@@ -57,7 +58,8 @@ d:\workspace\Topic_one/
 │   │   │   ├── SceneController.java         # 场景 CRUD
 │   │   │   └── SettingsController.java      # 用户设置
 │   │   ├── dto/                      # 数据传输对象
-│   │   │   ├── ws/WsMessage.java     # WebSocket 消息封装（status / type 字段）
+│   │   │   ├── ws/WsMessage.java     # WebSocket 消息封装（含发音评测消息类型）
+│   │   │   ├── pronunciation/PronunciationResult.java  # 发音评测结果 DTO（数值评分+单词音素）
 │   │   │   └── ...                   # 其他 DTO
 │   │   ├── entity/                   # 数据库实体类
 │   │   ├── mapper/                   # MyBatis-Plus Mapper 接口
@@ -71,6 +73,9 @@ d:\workspace\Topic_one/
 │   │   │   ├── tts/                  # TTS 语音合成
 │   │   │   │   ├── TtsService.java           # TTS 接口
 │   │   │   │   └── AliyunTtsService.java     # 阿里云实现（SpeechSynthesizer 免费版）
+│   │   │   ├── pronunciation/         # 发音评测
+│   │   │   │   ├── PronunciationService.java        # 发音评测接口（单句 + 批量）
+│   │   │   │   └── XunfeiPronunciationService.java  # 讯飞流式评测实现（WSS 协议）
 │   │   │   ├── PromptBuilderService.java     # 提示词构建接口
 │   │   │   ├── MessageService.java           # 消息存储接口
 │   │   │   └── impl/                 # Service 实现
@@ -91,9 +96,10 @@ d:\workspace\Topic_one/
 │   │   │   └── conversations.ts      # 会话相关接口
 │   │   ├── components/layout/        # 布局组件
 │   │   │   ├── Sidebar.vue           # 左侧边栏
-│   │   │   ├── Header.vue            # 顶部导航栏
-│   │   │   ├── ContentArea.vue       # 中间内容区（对话消息+AI虚拟人展示）
-│   │   │   └── VoiceInput.vue        # 底部语音输入栏（麦克风按钮，自动循环模式）
+│   │   │   ├── Header.vue            # 顶部导航栏（含字幕开关）
+│   │   │   ├── ContentArea.vue       # 中间内容区（对话消息+AI虚拟人+字幕显示）
+│   │   │   ├── VoiceInput.vue        # 底部语音输入栏（麦克风按钮，自动循环模式）
+│   │   │   └── PronunciationPanel.vue # 右侧发音评测面板（评分圆环+进度条+逐句详情）
 │   │   ├── stores/app.ts             # Pinia 全局状态管理（WebSocket + 录音 + TTS播放 + 消息管理）
 │   │   ├── views/
 │   │   │   ├── HomeView.vue          # 主页面（四栏布局）
@@ -284,6 +290,10 @@ WebSocket 是全自动语音对话的核心通道，使用 JSON 文本帧 + 二�
 { "type": "llm_chunk", "text": "I'm fine, thank you!" }
 // TTS 合成音频（base64 编码 PCM）
 { "type": "audio_chunk", "data": "base64..." }
+// 发音评测单句结果
+{ "type": "pronunciation_result", "data": { "refText":"...", "overallScore":85.0, "accuracyScore":90.0, "fluencyScore":82.0, "integrityScore":88.0, "wordDetails":[...] } }
+// 发音评测全部完成
+{ "type": "pronunciation_complete", "data": null }
 // 状态通知
 { "type": "status", "status": "recording|processing|speaking" }
 // 错误
@@ -308,9 +318,10 @@ WebSocket 是全自动语音对话的核心通道，使用 JSON 文本帧 + 二�
 ### 6.2 后端处理链路（VoiceWebSocketHandler）
 
 1. **收到 `start`**：创建 ASR 会话（阿里云 NLS SpeechTranscriber），建立双向连接
-2. **收到 PCM 二进制帧** → 转发给 ASR 服务
+2. **收到 PCM 二进制帧** → 转发给 ASR 服务，同时 append 到 `VoiceSession.currentAudioChunks`（用于后续发音评测）
 3. **ASR 返回中间结果** → 发送 `asr_partial` 给前端（实时显示）
 4. **ASR 返回最终断句结果** → 发送 `asr_final` → 触发 LLM 管线：
+   - 合并当前句子全部 PCM 音频（`flushCurrentAudio()`）→ 保存为 `UserUtterance`（供评测用）
    - 获取会话场景配置（scene_id → scenes.scene_name + conversation_scene_config.description/role_setting）
    - 构建系统提示词（`PromptBuilderService.buildSystemPrompt(conversationId, userMessage)`）
    - 调用通义千问流式 API（qwen-turbo，temperature=0.3, maxTokens=150）
@@ -318,6 +329,7 @@ WebSocket 是全自动语音对话的核心通道，使用 JSON 文本帧 + 二�
    - LLM 完成后 → 调用 TTS 合成 → 发送 `audio_chunk` 给前端
 5. **TTS 期间收到的 PCM** → 静默丢弃（保护状态一致性）
 6. **本轮完成** → 发送 `status: recording` → 前端恢复录音
+7. **收到 `stop`** → 停止 ASR → 触发发音评测（见 6.6 节）→ 清理资源 → 发 `status: ready`
 
 ### 6.3 提示词构建（PromptBuilderServiceImpl）
 
@@ -351,6 +363,66 @@ WebSocket 是全自动语音对话的核心通道，使用 JSON 文本帧 + 二�
 - **主动调度**：`enqueueTtsAudio` 和 `source.onended` 双重触发
 - **Int16→Float32**：手动 `ctx.createBuffer()` + 不对称转换系数（负值/32768.0，正值/32767.0）
 
+### 6.6 发音评测流程（讯飞 ISE）
+
+发音评测在**对话结束（用户点击停止）时触发**，与主对话循环解耦，不阻塞实时交互。
+
+**完整流程**：
+```
+用户点击麦克风（stop 指令）
+  ↓
+后端 stopSession → 停止 ASR → 结束对话循环
+  ↓
+取出对话中积累的全部 UserUtterance 列表（每句 = PCM 音频 + ASR 识别文本）
+  ↓
+调用 pronunciationService.evaluateBatch(utterances)
+  ├─→ [第1句] 构建鉴权 URL：HMAC-SHA256 签名 → query string 带 authorization/date/host
+  │    ↓
+  │   建立 WSS 连接到讯飞服务 (wss://ise-api.xfyun.cn/v2/open-ise?...)
+  │    ↓
+  │   发送 ssb 帧：{ common:{app_id}, business:{cmd:"ssb", sub:"ise", ent:"en_vip",
+  │     category:"read_sentence", text:"\uFEFF"+refText, extra_ability:"multi_dimension"}, data:{status:0} }
+  │    ↓
+  │   逐帧发送 base64 音频数据：{ business:{cmd:"auw",aus:1/2/4}, data:{status:1/2, data:"base64..."} }
+  │    每帧 ≤1280B（≈40ms PCM）
+  │    ↓
+  │   接收讯飞 JSON 响应 → 解析 data.data（base64-encoded XML）
+  │    ↓
+  │   提取数值评分：overall(总分) / accuracy(准确度) / fluency(流利度) / integrity(完整度) + 逐词音素
+  │    ↓
+  │   后端 WS 推送 pronunciation_result 消息给前端（逐句直播）
+  │
+  ├─→ [第N句] 同上 ...
+  │
+  └─→ 全部句子完成 → 后端推送 pronunciation_complete → 发送 status:"ready"
+       ↓
+       前端弹出 PronunciationPanel（右侧滑出面板）
+       展示：综合评分圆环 + 准确度/流利度/完整度进度条 + 逐句可展开（单词得分+音素芯片）
+```
+
+**讯飞鉴权（HMAC-SHA256）**：
+1. 生成 RFC1123 格式 GMT 时间戳
+2. 拼接签名原文：`host: ise-api.xfyun.cn\ndate: $date\nGET /v2/open-ise HTTP/1.1`
+3. HMAC-SHA256(apiSecret, signatureOrigin) → base64 → signature
+4. 组装 authorization_origin：`api_key="$apiKey", algorithm="hmac-sha256", headers="host date request-line", signature="$signature"`
+5. base64(authorization_origin) → 拼接到 WS URL 的 query string
+
+**音频缓冲机制**：
+- 用户录音期间，每帧 PCM 均 append 到 `VoiceSession.currentAudioChunks`
+- ASR 检测到断句 → `flushCurrentAudio()` 合并为完整句子 PCM → 保存为 `UserUtterance`
+- 空句子或下一句开始时 → `clearCurrentAudio()` 清空缓冲
+
+**Mock 模式**：
+- `xunfei.mock: true`（默认）→ 跳过真实 API 调用，直接返回随机评分数据
+- 生产环境设 `false` 并配置 `XUNFEI_APP_ID` / `XUNFEI_API_KEY` / `XUNFEI_API_SECRET`
+
+### 6.7 字幕功能
+
+- **字幕开关**：Header 右上角 eye 图标按钮，控制 `subtitleEnabled` 状态
+- **字幕内容**：为 LLM 回复文本（`aiFullResponse`）
+- **显示时机**：`ai_response_complete` 消息到达时显示，TTS 播放结束时隐藏
+- **提示文字替代**：字幕开启后，ContentArea 中的提示文字区域改为显示字幕，对话中始终可见
+
 ---
 
 ## 7. 环境变量配置
@@ -363,6 +435,9 @@ WebSocket 是全自动语音对话的核心通道，使用 JSON 文本帧 + 二�
 | `ALIYUN_ACCESS_KEY_ID` | 阿里云 AK ID | `asr.access-key-id`, `tts.access-key-id` |
 | `ALIYUN_ACCESS_KEY_SECRET` | 阿里云 AK Secret | `asr.access-key-secret`, `tts.access-key-secret` |
 | `ALIYUN_NLS_APP_KEY` | 阿里云 NLS 项目 AppKey | `asr.app-key`, `tts.app-key` |
+| `XUNFEI_APP_ID` | 讯飞开放平台 AppID | `xunfei.app-id` |
+| `XUNFEI_API_KEY` | 讯飞 ISE API Key | `xunfei.api-key` |
+| `XUNFEI_API_SECRET` | 讯飞 ISE API Secret | `xunfei.api-secret` |
 
 启动前需在终端设置（或配置系统环境变量后重启 IDE）：
 
@@ -371,6 +446,9 @@ $env:DASHSCOPE_API_KEY="sk-..."
 $env:ALIYUN_ACCESS_KEY_ID="LTAI..."
 $env:ALIYUN_ACCESS_KEY_SECRET="..."
 $env:ALIYUN_NLS_APP_KEY="..."
+$env:XUNFEI_APP_ID="..."
+$env:XUNFEI_API_KEY="..."
+$env:XUNFEI_API_SECRET="..."
 ```
 
 ---
@@ -486,8 +564,14 @@ if (accumulatedText.length() > previousLen) {
 | `recognitionText` | `string` | ASR 识别文字（中间结果实时更新） |
 | `aiStreamingText` | `string` | LLM 流式输出文字（差量追加） |
 | `aiFullResponse` | `string` | LLM 完整回复 |
+| `subtitleEnabled` | `boolean` | 字幕开关状态 |
+| `subtitleVisible` | `boolean` | 字幕当前是否可见（受时间控制） |
+| `subtitleText` | `string` | 当前字幕文字内容 |
 | `autoLoop` | `boolean` | 是否开启自动循环模式 |
 | `isDirty` | `boolean` | 对话是否有未保存内容 |
+| `pronunciationResults` | `PronunciationResultItem[]` | 发音评测结果列表（每句一个） |
+| `pronunciationEvaluating` | `boolean` | 是否正在评测中 |
+| `pronunciationPanelVisible` | `boolean` | 评测面板是否展开 |
 
 **计算属性**：
 
@@ -520,6 +604,22 @@ interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
   timestamp: number
+}
+```
+
+**PronunciationResultItem 类型**：
+```typescript
+interface PronunciationResultItem {
+  refText: string
+  overallScore: number        // 综合得分
+  accuracyScore: number       // 准确度得分
+  fluencyScore: number        // 流利度得分
+  integrityScore: number      // 完整度得分
+  speed: number               // 语速（0=慢,1=正常,2=快）
+  audioDuration: number       // 录音时长（ms）
+  sentenceDetail: { score: number, stressScore: number, toneScore: number, senseScore: number } | null
+  wordDetails: { word: string, score: number, startMs: number, endMs: number,
+                 phonemes: { phoneme: string, score: number, hasError: boolean }[] }[]
 }
 ```
 
@@ -599,16 +699,20 @@ const request = axios.create({
 - [x] **会话切换状态隔离**：切换会话自动关闭旧连接 + 清空消息面板
 - [x] **密钥安全**：所有 API 密钥通过环境变量注入，application.yml 无硬编码
 - [x] **ASR 断句优化**：`max_sentence_silence=1000ms` 静音断句参数
+- [x] **字幕功能**：Header 开关 + 对话中显示 LLM 回复文字 + TTS 播放前后受控显示/隐藏
+- [x] **讯飞发音评测**：对话停止时自动触发，逐句 WSS 连接评测，支持 Mock 模式
+- [x] **评测面板**：PronunciationPanel 右侧滑出，综合评分圆环 + 三维度进度条 + 逐句可展开单词音素详情
 
 ---
 
 ## 11. 已知问题 & 待优化
 
-1. **中间内容区（ContentArea）**：当前展示 AI 虚拟人形象，对话消息气泡功能待完善
+1. **中间内容区（ContentArea）**：当前展示 AI 虚拟人形象 + 字幕，对话消息气泡功能待完善
 2. **消息持久化**：已实现基本写入，消息列表加载（从 DB 恢复历史消息）待实现
 3. **登录系统**：当前硬编码 userId=1，需对接登录/注册
 4. **MinIO 音频存储**：已配置但未接入，可用于存储录音存档
 5. **前端构建输出路径**：Vite 构建产物输出到后端 `static/` 目录以便打包部署
+6. **讯飞评测**：当前默认启用 Mock 模式，对接真实 API 需配置 XUNFEI 环境变量并设 `xunfei.mock: false`
 
 ---
 
@@ -651,6 +755,9 @@ $env:DASHSCOPE_API_KEY="sk-..."
 $env:ALIYUN_ACCESS_KEY_ID="LTAI..."
 $env:ALIYUN_ACCESS_KEY_SECRET="..."
 $env:ALIYUN_NLS_APP_KEY="..."
+$env:XUNFEI_APP_ID="..."       # 讯飞评测（Mock 模式下可跳过）
+$env:XUNFEI_API_KEY="..."      # 讯飞评测（Mock 模式下可跳过）
+$env:XUNFEI_API_SECRET="..."   # 讯飞评测（Mock 模式下可跳过）
 ```
 
 ### 数据库

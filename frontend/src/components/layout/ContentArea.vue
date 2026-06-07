@@ -19,10 +19,9 @@
           </div>
         </div>
 
-        <h2 class="ai-name">Emma</h2>
         <!-- 提示文字：仅在空闲状态显示，对话中隐藏 -->
         <p v-if="store.aiStatus === 'ready'" class="ai-description">
-          你好，我是 Emma，你的 AI 英语口语伙伴。<br />
+          你好，我是你的 AI 英语口语伙伴。<br />
           点击下方麦克风开始对话。
         </p>
         <!-- 字幕：开启字幕且语音播放时显示 -->
@@ -123,14 +122,6 @@ const contentRef = ref<HTMLElement>()
 @keyframes pulse {
   0%, 100% { transform: scale(1); }
   50% { transform: scale(1.05); }
-}
-
-.ai-name {
-  font-size: 22px;
-  font-weight: 600;
-  color: var(--color-text-primary);
-  margin-bottom: 8px;
-  letter-spacing: -0.02em;
 }
 
 .ai-description {
