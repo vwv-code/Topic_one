@@ -89,6 +89,11 @@ tts:
   speech-rate: 0       # 语速 -500~500，0为正常
   pitch-rate: 0        # 语调 -500~500，0为正常
 
+# ====== JWT 配置 ======
+jwt:
+  secret: ${JWT_SECRET:TopicOne2026SecretKeyForJwtTokenGeneration}
+  expiration: 86400000  # Token 有效期：24小时（毫秒）
+
 # ====== 日志配置 ======
 logging:
   level:
